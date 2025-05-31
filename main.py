@@ -91,16 +91,49 @@ def display_feeds():
     console.print(table)
 
 def main():
-    parser = argparse.ArgumentParser(description='RSS AI with vector search')
-    parser.add_argument('--reset-db', action='store_true', help='Reset the database before starting')
-    parser.add_argument('--add-feeds', action='store_true', help='Add example RSS feeds')
-    parser.add_argument('--category', type=str, help='Only add feeds from specific category')
-    parser.add_argument('--list-categories', action='store_true', help='List available feed categories')
-    parser.add_argument('--list-feeds', action='store_true', help='List all configured feeds')
-    parser.add_argument('--update-all', action='store_true', help='Update all feeds')
-    parser.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
-    parser.add_argument('--chat', action='store_true', help='Start chat interface')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser = argparse.ArgumentParser(
+        description='RSS CLI with AI-powered feed management and interaction',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # List all available feed categories
+  python main.py --list-categories
+  
+  # Add feeds from a specific category
+  python main.py --add-feeds --category tech
+  
+  # Update all feeds in a category
+  python main.py --update-category tech
+  
+  # Start chat interface
+  python main.py --chat
+        """
+    )
+    
+    # Database management
+    db_group = parser.add_argument_group('Database Management')
+    db_group.add_argument('--reset-db', action='store_true', help='Reset the database and recreate all tables')
+    
+    # Feed management
+    feed_group = parser.add_argument_group('Feed Management')
+    feed_group.add_argument('--add-feeds', action='store_true', help='Add example RSS feeds to the database')
+    feed_group.add_argument('--category', type=str, help='Specify a category when adding or updating feeds')
+    feed_group.add_argument('--update-all', action='store_true', help='Update all feeds in the database')
+    feed_group.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
+    
+    # Information display
+    info_group = parser.add_argument_group('Information Display')
+    info_group.add_argument('--list-categories', action='store_true', help='List all available feed categories')
+    info_group.add_argument('--list-feeds', action='store_true', help='List all configured feeds')
+    
+    # Chat interface
+    chat_group = parser.add_argument_group('Chat Interface')
+    chat_group.add_argument('--chat', action='store_true', help='Start the AI chat interface')
+    
+    # Debug options
+    debug_group = parser.add_argument_group('Debug Options')
+    debug_group.add_argument('--debug', action='store_true', help='Enable debug mode for verbose output')
+
     args = parser.parse_args()
     
     if args.list_categories:
