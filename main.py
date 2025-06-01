@@ -12,6 +12,7 @@ from cli import (
 )
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
 from contextlib import contextmanager
 from database.models import Feed
 
@@ -145,23 +146,23 @@ Examples:
         # Create chat instance
         chat = RSSChat(config=config, debug=args.debug)
         
-        welcome_md = """
-        # RSS AI Chat Interface
+        welcome_md = """# RSS CLI AI Chat Interface
+
+You can:
+1. 🔍 Search feeds by category
+   - Example: "show me tech feeds"
+2. 📰 Get feed details
+   - Example: "what's new on Hacker News?"
+3. 🎯 Search by topic
+   - Example: "find feeds about machine learning"
+4. 🔄 Update feeds
+   - Example: "update OpenAI Blog"
+
+💡 Tip: Use `--help` to see all available command line options
+
+Type 'quit' to exit."""
         
-        You can:
-        1. 🔍 Search feeds by category
-           - Example: "show me tech feeds"
-        2. 📰 Get feed details
-           - Example: "what's new on Hacker News?"
-        3. 🎯 Search by topic
-           - Example: "find feeds about machine learning"
-        4. 🔄 Update feeds
-           - Example: "update OpenAI Blog"
-        
-        Type 'quit' to exit.
-        """
-        
-        console.print(Markdown(welcome_md))
+        console.print(Panel(Markdown(welcome_md), border_style="green"))
         
         while True:
             query = console.input("\n[bold cyan]Enter your question[/bold cyan] (or 'quit' to exit): ")
