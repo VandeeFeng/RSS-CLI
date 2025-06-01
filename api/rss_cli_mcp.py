@@ -5,6 +5,8 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from pydantic import BaseModel
 import logging
+from contextlib import asynccontextmanager
+import asyncio
 
 from database.db import SessionLocal
 from database.models import Feed, FeedEntry
@@ -14,7 +16,23 @@ from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_catego
 # Initialize logger
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="RSS CLI API", description="API for RSS feed management with MCP support")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize MCP before the application starts
+    global mcp
+    mcp = FastApiMCP(app)
+    mcp.mount()
+    await asyncio.sleep(1)  # Give MCP time to fully initialize
+    logger.info("MCP server initialization complete")
+    yield
+    # Cleanup (if needed)
+    logger.info("Shutting down MCP server")
+
+app = FastAPI(
+    title="RSS CLI API",
+    description="API for RSS feed management with MCP support",
+    lifespan=lifespan
+)
 
 def get_db():
     db = SessionLocal()
@@ -143,11 +161,8 @@ async def get_feed_summary(feed_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Initialize FastApiMCP AFTER all routes have been defined on `app`
-mcp = FastApiMCP(app)
-# Mount the MCP server - FastApiMCP will pick up all routes from `app`
-mcp.mount()
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio") 
+    
+    # Use localhost instead of 0.0.0.0 for better stability
+    uvicorn.run(app, host="127.0.0.1", port=8000, loop="asyncio") 
