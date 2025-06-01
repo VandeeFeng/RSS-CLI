@@ -67,8 +67,8 @@ Examples:
   # List all configured feeds
   python main.py --list-feeds
   
-  # Add feeds from a specific category
-  python main.py --add-feeds --category tech
+  # Add feeds interactively
+  python main.py --add-feeds
   
   # Update all feeds in a category
   python main.py --update-category tech
@@ -96,8 +96,10 @@ Examples:
     
     # Feed management
     feed_group = parser.add_argument_group('Feed Management')
-    feed_group.add_argument('--add-feeds', action='store_true', help='Add example RSS feeds to the database')
-    feed_group.add_argument('--category', type=str, help='Specify a category when adding or updating feeds')
+    feed_group.add_argument('--add-feeds', action='store_true', 
+        help='Interactively add new RSS feeds. You will be prompted to enter category, URL, and name for each feed. '
+             'Feeds will be saved to both feeds.json and database.')
+    feed_group.add_argument('--category', type=str, help='Specify a category when updating feeds')
     feed_group.add_argument('--update-all', action='store_true', help='Update all feeds in the database')
     feed_group.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
     feed_group.add_argument('--import-opml', type=str, metavar='FILE', help='Import feeds from OPML file')

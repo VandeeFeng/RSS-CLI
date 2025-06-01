@@ -13,37 +13,11 @@ class Feed:
 # File to store feeds
 FEEDS_FILE = "feeds.json"
 
-# Default feed categories
-DEFAULT_FEED_CATEGORIES: Dict[str, List[Feed]] = {
-    "tech": [
-        Feed(
-            url="https://news.ycombinator.com/rss",
-            name="Hacker News"
-        ),
-        Feed(
-            url="https://techcrunch.com/feed/",
-            name="TechCrunch"
-        )
-    ],
-    "programming": [
-        Feed(
-            url="https://dev.to/feed/",
-            name="Dev.to"
-        )
-    ],
-    "ai": [
-        Feed(
-            url="https://arxiv.org/rss/cs.AI",
-            name="ArXiv AI"
-        )
-    ]
-}
-
-# Global feed categories that will be loaded from file or defaults
+# Global feed categories that will be loaded from file
 FEED_CATEGORIES: Dict[str, List[Feed]] = {}
 
 def _load_feeds():
-    """Load feeds from file or use defaults"""
+    """Load feeds from file"""
     global FEED_CATEGORIES
     try:
         if os.path.exists(FEEDS_FILE):
@@ -54,9 +28,19 @@ def _load_feeds():
                     for category, feeds in data.items()
                 }
         else:
-            FEED_CATEGORIES = DEFAULT_FEED_CATEGORIES
-    except Exception:
-        FEED_CATEGORIES = DEFAULT_FEED_CATEGORIES
+            from rich.console import Console
+            console = Console()
+            console.print("[yellow]No feeds.json found![/yellow]")
+            console.print("[green]You can add feeds using:[/green]")
+            console.print("  python main.py --add-feeds")
+            FEED_CATEGORIES = {}
+    except Exception as e:
+        from rich.console import Console
+        console = Console()
+        console.print(f"[red]Error loading feeds.json: {str(e)}[/red]")
+        console.print("[green]You can add feeds using:[/green]")
+        console.print("  python main.py --add-feeds")
+        FEED_CATEGORIES = {}
 
 def _save_feeds():
     """Save feeds to file"""
@@ -70,7 +54,48 @@ def _save_feeds():
 def update_feed_categories(new_categories: Dict[str, List[Feed]]) -> None:
     """Update FEED_CATEGORIES with new categories and feeds"""
     global FEED_CATEGORIES
-    FEED_CATEGORIES = new_categories
+    
+    # Load existing feeds if not loaded
+    if not FEED_CATEGORIES:
+        _load_feeds()
+    
+    # Create a set of existing URLs for quick lookup
+    existing_urls = {
+        feed.url
+        for feeds in FEED_CATEGORIES.values()
+        for feed in feeds
+    }
+    
+    # Create a map of existing names to avoid duplicates
+    existing_names = {
+        feed.name: feed
+        for feeds in FEED_CATEGORIES.values()
+        for feed in feeds
+    }
+    
+    # Merge new categories with existing ones
+    for category, feeds in new_categories.items():
+        if category not in FEED_CATEGORIES:
+            FEED_CATEGORIES[category] = []
+            
+        for feed in feeds:
+            # Skip if URL already exists in any category
+            if feed.url in existing_urls:
+                continue
+                
+            # If name exists but URL is different, append a number
+            base_name = feed.name
+            counter = 1
+            while feed.name in existing_names:
+                feed.name = f"{base_name} ({counter})"
+                counter += 1
+            
+            FEED_CATEGORIES[category].append(feed)
+            # Update our tracking sets/maps
+            existing_urls.add(feed.url)
+            existing_names[feed.name] = feed
+    
+    # Save the updated feeds to file
     _save_feeds()
 
 def get_all_feeds() -> List[Feed]:

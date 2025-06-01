@@ -65,6 +65,14 @@ if [ ! -f ".env" ] && [ -f "env.example" ]; then
     echo "⚠️ Please update the .env file with your actual configuration"
 fi
 
+# Set up feeds.json
+if [ ! -f "feeds.json" ] && [ -f "feeds_example.json" ]; then
+    echo "📋 Setting up feeds configuration..."
+    cp feeds_example.json feeds.json
+    echo "✨ Created feeds.json with example structure"
+    echo "💡 You can add your feeds using: python main.py --add-feeds"
+fi
+
 # Start database using docker-compose
 echo "🐳 Starting database services..."
 cd database && docker-compose up -d

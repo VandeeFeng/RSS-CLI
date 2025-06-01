@@ -1,0 +1,24 @@
+{
+    "tech": [
+      {
+        "url": "https://news.ycombinator.com/rss",
+        "name": "Hacker News"
+      },
+      {
+        "url": "https://techcrunch.com/feed/",
+        "name": "TechCrunch"
+      }
+    ],
+    "programming": [
+      {
+        "url": "https://dev.to/feed/",
+        "name": "Dev.to"
+      }
+    ],
+    "ai": [
+      {
+        "url": "https://arxiv.org/rss/cs.AI",
+        "name": "ArXiv AI"
+      }
+    ]
+}

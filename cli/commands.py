@@ -143,39 +143,76 @@ def update_feeds_from_json(debug: bool = False):
             console.print("\n[bold blue]No changes needed, feeds configuration is up to date.[/bold blue]")
 
 def add_feeds(category: str = None, debug: bool = False):
-    """Add feeds to the database"""
+    """Interactive function to add feeds to feeds.json and database"""
     fetcher = RSSFetcher(debug=debug)
+    console = Console()
     
-    if category:
-        if category not in get_available_categories():
-            console.print(f"[bold red]Error:[/bold red] Category '{category}' not found.")
-            console.print("Available categories:", ", ".join(get_available_categories()))
-            return
-        feeds_to_add = get_feeds_by_category(category)
-        console.print(f"\n[bold cyan]Adding feeds from category:[/bold cyan] {category}")
-    else:
-        feeds_to_add = get_all_feeds()
-        console.print("\n[bold cyan]Adding all feeds[/bold cyan]")
+    # Load existing feeds
+    _load_feeds()
+    categories = get_available_categories()
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        for feed in feeds_to_add:
-            task_id = progress.add_task(f"Fetching: {feed.name}")
-            try:
-                result = fetcher.fetch_feed(feed.url)
-                if result:
-                    with get_db_session() as db:
-                        db_feed = db.merge(result)
-                        console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
-                else:
-                    console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed.name}")
-            except Exception as e:
-                console.print(f"[bold red]Error fetching {feed.name}:[/bold red] {str(e)}")
-            finally:
-                progress.remove_task(task_id)
+    while True:
+        # Get category
+        if not categories:
+            category = console.input("\n[bold cyan]Enter new category name[/bold cyan]: ").strip().lower()
+        else:
+            console.print("\nAvailable categories:", ", ".join(categories))
+            category = console.input("[bold cyan]Enter category name (new or existing)[/bold cyan]: ").strip().lower()
+        
+        if not category:
+            break
+            
+        # Get feed URL
+        url = console.input("[bold cyan]Enter feed URL[/bold cyan] (or press Enter to finish): ").strip()
+        if not url:
+            break
+            
+        # Get feed name
+        name = console.input("[bold cyan]Enter feed name[/bold cyan] (or press Enter to use default): ").strip()
+        
+        # Validate feed URL and add to both feeds.json and database
+        try:
+            with console.status("[bold yellow]Validating and adding feed...[/bold yellow]"):
+                # First try to fetch and add to database
+                result = fetcher.fetch_feed(url)
+                if not result:
+                    console.print("[bold red]Error:[/bold red] Invalid feed URL")
+                    continue
+                
+                # Use fetched title if name not provided
+                if not name:
+                    name = result.title or url
+                
+                # Add to feeds.json
+                feed = Feed(url=url, name=name)
+                update_feed_categories({category: [feed]})
+                console.print("[bold green]✓[/bold green] Saved to feeds.json")
+                
+                # Add to database
+                with get_db_session() as db:
+                    db_feed = db.merge(result)
+                    db.commit()
+                    console.print("[bold green]✓[/bold green] Saved to database")
+                    console.print(Panel(format_feed_info(db_feed), title=name, border_style="green"))
+                
+                console.print(f"[bold green]Successfully added feed:[/bold green] {name}")
+                console.print(f"[bold green]Category:[/bold green] {category}")
+                
+                # Update categories list
+                categories = get_available_categories()
+                
+                # Ask if want to add another feed
+                if not console.input("\n[bold cyan]Add another feed? (y/N):[/bold cyan] ").lower().startswith('y'):
+                    break
+                    
+        except Exception as e:
+            console.print(f"[bold red]Error:[/bold red] {str(e)}")
+            if not console.input("\n[bold cyan]Try again? (Y/n):[/bold cyan] ").lower().startswith('n'):
+                continue
+            break
+    
+    console.print("\n[bold green]Feed addition completed![/bold green]")
+    display_categories()
 
 def update_category(category: str, debug: bool = False):
     """Update all feeds in a specific category"""
