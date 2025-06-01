@@ -275,11 +275,12 @@ Configure MCP in Cursor settings:
 Add this to your Cursor settings to enable MCP integration. The URL should match your MCP server address.
 
 The MCP server provides the following endpoints:
-- `/mcp/list_feeds` - Get all RSS feeds
-- `/mcp/feeds/search` - Search feeds by title/URL
-- `/mcp/feeds/{feed_id}/summary` - Get feed summary with latest entries
-- `/mcp/feeds/categories` - List all feed categories
-- `/mcp/feeds/update/{feed_id}` - Update specific feed
+- `/feeds` - List all RSS feeds
+- `/feeds/search` - Search feeds by title/URL (POST)
+- `/feeds/categories` - List all feed categories
+- `/feeds/update/{feed_id}` - Update specific feed (POST)
+- `/feeds/{feed_id}/entries` - Get feed entries (supports limit parameter)
+- `/feeds/{feed_id}/summary` - Get feed summary including latest entries
 
 ## Tech Stack
 
