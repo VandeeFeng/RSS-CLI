@@ -109,7 +109,27 @@ Traditional RSS readers often lack intelligent search and content discovery feat
 
 ## Quick Start
 
-1. **Clone and Setup Environment**
+1. **Run Setup Script** (Recommended)
+```bash
+# Make the script executable
+chmod +x setup.sh
+
+# Run the initialization script
+./setup.sh
+```
+
+The setup script will:
+- Check and install required dependencies
+- Set up Python virtual environment
+- Install UV package manager (optional but recommended)
+- Install project dependencies
+- Configure environment variables
+- Start PostgreSQL database with Docker
+- Wait for database to be ready
+
+Or you can set up manually:
+
+2. **Clone and Setup Environment**
 ```bash
 # Create and activate virtual environment
 uv venv
@@ -119,7 +139,7 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-2. **Configure RSS Feeds**
+3. **Configure RSS Feeds**
 The project supports two ways to configure RSS feeds:
 
 a) **Import from OPML** (Recommended)
@@ -169,7 +189,7 @@ You can:
 - Customize update intervals per feed
 - Group feeds by your own categories
 
-3. **Setup PostgreSQL with Docker** (recommended)
+4. **Setup PostgreSQL with Docker** (recommended)
 ```bash
 # Start PostgreSQL with pgvector
 cd database && docker-compose up -d
@@ -178,7 +198,7 @@ cd database && docker-compose up -d
 CREATE EXTENSION vector;
 ```
 
-4. **Configure Environment**
+5. **Configure Environment**
 Copy `env.example` to `.env` and adjust the values:
 ```env
 # Database settings
@@ -194,13 +214,13 @@ RSS_MAX_AGE_HOURS=24           # Maximum age of entries to fetch
 RSS_MAX_ENTRIES_PER_FEED=10    # Maximum entries per feed
 ```
 
-5. **Install Required Ollama Models**
+6. **Install Required Ollama Models**
 ```bash
 ollama pull qwen3:14b
 ollama pull nomic-embed-text
 ```
 
-6. **Initialize and Run**
+7. **Initialize and Run**
 ```bash
 # Reset database and add initial feeds
 python main.py --reset-db --add-feeds
