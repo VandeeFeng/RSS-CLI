@@ -24,6 +24,9 @@ Traditional RSS readers often lack intelligent search and content discovery feat
 ## Project Structure
 ```
 .
+├── api/                  # API and MCP integration
+│   ├── __init__.py      # API package initialization
+│   └── rss_cli_mcp.py   # MCP endpoints and FastAPI setup
 ├── database/               # Database related code
 │   ├── db.py              # Database connection and session management
 │   ├── models.py          # SQLAlchemy models
@@ -60,6 +63,13 @@ Traditional RSS readers often lack intelligent search and content discovery feat
   - Natural language queries for feed content
   - Smart feed recommendations
   - Contextual article summaries
+
+- 🌐 **MCP Integration**
+  - Standardized API endpoints for feed management
+  - Seamless function calling between components
+  - Real-time feed updates and synchronization
+  - Extensible API layer for third-party integrations
+  - Built on FastAPI for high performance
 
 - 🛠️ **Extensible Function System**
   - Built on LangChain's Tool framework for easy extension
@@ -235,6 +245,34 @@ The LLM agent automatically:
 - Handles parameter validation and error cases
 - Processes and formats function outputs
 - Combines multiple function calls when needed
+
+### MCP
+
+To start the MCP server:
+```bash
+# Start the MCP server on default port 8000
+python -m api.rss_cli_mcp
+
+# Or specify a custom port
+PORT=8080 python -m api.rss_cli_mcp
+```
+
+Configure MCP in Cursor settings:
+```json
+{
+  "rss_mcp": {
+    "url": "http://127.0.0.1:8000/mcp"
+  }
+}
+```
+Add this to your Cursor settings to enable MCP integration. The URL should match your MCP server address.
+
+The MCP server provides the following endpoints:
+- `/mcp/list_feeds` - Get all RSS feeds
+- `/mcp/feeds/search` - Search feeds by title/URL
+- `/mcp/feeds/{feed_id}/summary` - Get feed summary with latest entries
+- `/mcp/feeds/categories` - List all feed categories
+- `/mcp/feeds/update/{feed_id}` - Update specific feed
 
 ## Tech Stack
 

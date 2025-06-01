@@ -12,6 +12,7 @@ import logging
 import json
 from crawl4ai import AsyncWebCrawler
 import asyncio
+import requests
 
 # Initialize embeddings model
 embeddings_model = OllamaEmbeddings(
@@ -574,4 +575,110 @@ crawl_url_tool = Tool(
         Includes success status and error messages if any.
     """,
     func=crawl_url_content
+)
+
+# MCP tools
+def list_feeds() -> str:
+    """
+    List all RSS feeds in the database
+    
+    Returns:
+        JSON string containing list of feeds with their metadata
+    """
+    try:
+        response = requests.get("http://localhost:8000/mcp/list_feeds")
+        response.raise_for_status()
+        return json.dumps(response.json())
+    except Exception as e:
+        error_response = {
+            "success": False,
+            "error": str(e),
+            "feeds": []
+        }
+        return json.dumps(error_response)
+
+def search_feeds(query: str) -> str:
+    """
+    Search for RSS feeds by title or URL
+    
+    Args:
+        query: Search term to find in feed titles or URLs
+        
+    Returns:
+        JSON string containing matching feeds
+    """
+    try:
+        response = requests.post(
+            "http://localhost:8000/mcp/feeds/search",
+            json={"query": query}
+        )
+        response.raise_for_status()
+        return json.dumps(response.json())
+    except Exception as e:
+        error_response = {
+            "success": False,
+            "error": str(e),
+            "results": []
+        }
+        return json.dumps(error_response)
+
+def get_feed_summary(feed_id: int) -> str:
+    """
+    Get a summary of a feed including its latest entries
+    
+    Args:
+        feed_id: ID of the feed to get summary for
+        
+    Returns:
+        JSON string containing feed summary and latest entries
+    """
+    try:
+        response = requests.get(f"http://localhost:8000/mcp/feeds/{feed_id}/summary")
+        response.raise_for_status()
+        return json.dumps(response.json())
+    except Exception as e:
+        error_response = {
+            "success": False,
+            "error": str(e),
+            "feed": None,
+            "latest_entries": []
+        }
+        return json.dumps(error_response)
+
+# Define MCP tools
+list_feeds_tool = Tool(
+    name="list_feeds_feeds_get",
+    description="""
+    List all RSS feeds in the database.
+    Returns a list of feeds with their metadata including ID, title, URL and last update time.
+    """,
+    func=list_feeds
+)
+
+search_feeds_tool = Tool(
+    name="search_feeds_feeds_search_post",
+    description="""
+    Search for RSS feeds by title or URL.
+    
+    Args:
+        query (str): Search term to find in feed titles or URLs
+        
+    Returns:
+        List of matching feeds with their metadata
+    """,
+    func=search_feeds
+)
+
+get_feed_summary_tool = Tool(
+    name="get_feed_summary_feeds_feed_id_summary_get",
+    description="""
+    Get a summary of a feed including its latest entries.
+    
+    Args:
+        feed_id (int): ID of the feed to get summary for
+        
+    Returns:
+        Feed metadata and its latest entries
+    """,
+    func=get_feed_summary
 ) 

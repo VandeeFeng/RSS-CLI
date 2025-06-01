@@ -8,6 +8,9 @@ python-dotenv==1.0.1
 # HTTP and async
 httpx==0.28.1
 aiohttp==3.12.6
+fastapi==0.110.0
+uvicorn==0.28.0
+fastapi-mcp==0.3.4
 
 # LLM and embeddings
 langchain==0.1.9
