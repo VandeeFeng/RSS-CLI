@@ -27,21 +27,25 @@ Traditional RSS readers often lack intelligent search and content discovery feat
 ├── api/                  # API and MCP integration
 │   ├── __init__.py      # API package initialization
 │   └── rss_cli_mcp.py   # MCP endpoints and FastAPI setup
-├── database/               # Database related code
-│   ├── db.py              # Database connection and session management
-│   ├── models.py          # SQLAlchemy models
+├── cli/                  # CLI command implementations
+│   ├── __init__.py      # CLI package initialization
+│   └── commands.py      # Command implementations
+├── database/            # Database related code
+│   ├── db.py           # Database connection and session management
+│   ├── models.py       # SQLAlchemy models
 │   ├── docker-compose.yml # PostgreSQL container configuration
-│   └── init.sql           # Database initialization script
-├── llm/                   # LLM integration
-│   ├── chat.py           # Chat interface implementation
-│   └── tools.py          # LangChain tools and functions
-├── rss/                   # RSS handling
-│   ├── feeds.py          # Feed configuration and management
-│   └── rss_fetcher.py    # RSS feed fetching and processing
-├── main.py               # CLI entry point
-├── config.py             # Configuration management
-├── requirements.txt      # Python dependencies
-└── .env                  # Environment variables
+│   └── init.sql        # Database initialization script
+├── llm/                # LLM integration
+│   ├── chat.py        # Chat interface implementation
+│   └── tools.py       # LangChain tools and functions
+├── rss/               # RSS handling
+│   ├── feeds.py      # Feed configuration and management
+│   ├── rss_fetcher.py # RSS feed fetching and processing
+│   └── opml_handler.py # OPML import/export handling
+├── main.py           # CLI entry point and argument parsing
+├── config.py         # Configuration management
+├── requirements.txt  # Python dependencies
+└── .env             # Environment variables
 ```
 
 ## Key Features
