@@ -2,6 +2,7 @@ from typing import List, Dict
 from dataclasses import dataclass
 import json
 import os
+from config import config
 
 @dataclass
 class Feed:
@@ -10,9 +11,6 @@ class Feed:
     title: str = ""  # RSS feed's actual title (will be fetched)
     update_interval: int = 3600  # Update interval in seconds
 
-# File to store feeds
-FEEDS_FILE = "feeds.json"
-
 # Global feed categories that will be loaded from file
 FEED_CATEGORIES: Dict[str, List[Feed]] = {}
 
@@ -20,8 +18,8 @@ def _load_feeds():
     """Load feeds from file"""
     global FEED_CATEGORIES
     try:
-        if os.path.exists(FEEDS_FILE):
-            with open(FEEDS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(config.rss.feeds_file):
+            with open(config.rss.feeds_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 FEED_CATEGORIES = {
                     category: [Feed(**feed) for feed in feeds]
@@ -30,14 +28,15 @@ def _load_feeds():
         else:
             from rich.console import Console
             console = Console()
-            console.print("[yellow]No feeds.json found![/yellow]")
+            console.print("[yellow]No feeds file found![/yellow]")
+            console.print(f"[yellow]Expected location: {config.rss.feeds_file}[/yellow]")
             console.print("[green]You can add feeds using:[/green]")
             console.print("  python main.py --add-feeds")
             FEED_CATEGORIES = {}
     except Exception as e:
         from rich.console import Console
         console = Console()
-        console.print(f"[red]Error loading feeds.json: {str(e)}[/red]")
+        console.print(f"[red]Error loading feeds file: {str(e)}[/red]")
         console.print("[green]You can add feeds using:[/green]")
         console.print("  python main.py --add-feeds")
         FEED_CATEGORIES = {}
@@ -48,7 +47,7 @@ def _save_feeds():
         category: [{"url": feed.url, "name": feed.name} for feed in feeds]
         for category, feeds in FEED_CATEGORIES.items()
     }
-    with open(FEEDS_FILE, 'w', encoding='utf-8') as f:
+    with open(config.rss.feeds_file, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 def update_feed_categories(new_categories: Dict[str, List[Feed]]) -> None:

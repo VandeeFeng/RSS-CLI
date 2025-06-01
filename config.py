@@ -21,6 +21,8 @@ class RSSConfig:
     max_age_hours: int = int(os.getenv("RSS_MAX_AGE_HOURS", "24"))
     # Maximum number of entries to fetch per feed
     max_entries_per_feed: int = int(os.getenv("RSS_MAX_ENTRIES_PER_FEED", "10"))
+    # Path to feeds configuration file
+    feeds_file: str = os.getenv("RSS_FEEDS_FILE", "feeds.json")
 
 class Config:
     def __init__(self):
