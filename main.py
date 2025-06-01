@@ -64,17 +64,29 @@ Examples:
   # List all available feed categories
   python main.py --list-categories
   
+  # List all configured feeds
+  python main.py --list-feeds
+  
   # Add feeds from a specific category
   python main.py --add-feeds --category tech
   
   # Update all feeds in a category
   python main.py --update-category tech
   
+  # Update all feeds in database
+  python main.py --update-all
+  
+  # Update feeds from feeds.json
+  python main.py --update-feedjs
+  
   # Import feeds from OPML file
   python main.py --import-opml feeds.opml
   
   # Start chat interface
   python main.py --chat
+  
+  # Enable debug mode
+  python main.py --chat --debug
         """
     )
     
@@ -132,6 +144,9 @@ Examples:
     
     if args.update_category:
         update_category(args.update_category, args.debug)
+    
+    if args.update_all:
+        add_feeds(None, args.debug)  # Update all feeds
     
     if args.update_feedjs:
         update_feeds_from_json(args.debug)
