@@ -115,8 +115,22 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-2. **Configure RSS Feeds** (Optional)
-The project comes with some default feeds. You can customize them by editing `rss/feeds.py`:
+2. **Configure RSS Feeds**
+The project supports two ways to configure RSS feeds:
+
+a) **Import from OPML** (Recommended)
+```bash
+# Import feeds from your OPML file
+python main.py --import-opml feeds.opml
+```
+The OPML import will:
+- Preserve your feed categories from the OPML file
+- Skip duplicate feeds (based on URL)
+- Automatically rename feeds with duplicate names
+- Fetch initial content for new feeds
+
+b) **Manual Configuration** (Optional)
+You can customize feeds by editing `rss/feeds.py`:
 
 ```python
 # Edit rss/feeds.py to customize your RSS sources
@@ -135,13 +149,6 @@ FEED_CATEGORIES = {
         Feed(
             url="https://www.reddit.com/r/programming/.rss",
             name="Reddit Programming"
-        )
-    ],
-    # Add your own categories and feeds
-    "your_category": [
-        Feed(
-            url="https://example.com/feed.xml",
-            name="Feed Name"
         )
     ]
 }

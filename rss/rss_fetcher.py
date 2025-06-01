@@ -8,6 +8,7 @@ from config import config
 from database.models import Feed as DBFeed, FeedEntry
 from database.db import SessionLocal
 from contextlib import contextmanager
+import requests
 
 logger = logging.getLogger('rss_ai')
 
@@ -34,10 +35,22 @@ class RSSFetcher:
     
     def fetch_feed(self, url: str) -> Optional[DBFeed]:
         try:
-            feed_data = feedparser.parse(url)
+            # First try to fetch the raw content with requests
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            # Force UTF-8 encoding regardless of declared encoding
+            content = response.content.decode('utf-8', errors='replace')
+            
+            # Parse the content with feedparser
+            feed_data = feedparser.parse(content)
+            
             if not feed_data.feed or hasattr(feed_data, 'bozo_exception'):
-                logger.error(f"Could not fetch feed from {url}: {getattr(feed_data, 'bozo_exception', 'No feed data')}")
-                return None
+                # If failed with direct content, try URL-based parsing as fallback
+                feed_data = feedparser.parse(url)
+                if not feed_data.feed or hasattr(feed_data, 'bozo_exception'):
+                    logger.error(f"Could not fetch feed from {url}: {getattr(feed_data, 'bozo_exception', 'No feed data')}")
+                    return None
                 
             with get_db_session() as db:
                 try:

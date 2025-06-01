@@ -3,7 +3,8 @@ from rss.rss_fetcher import RSSFetcher
 from llm.chat import RSSChat
 import argparse
 from config import config
-from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed
+from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed, update_feed_categories
+from rss.opml_handler import parse_opml, merge_feeds
 from database.models import Feed as DBFeed, FeedEntry
 from datetime import datetime
 from rich.console import Console
@@ -75,18 +76,32 @@ def display_feeds():
     table = Table(title="Configured Feeds")
     table.add_column("Name", style="cyan")
     table.add_column("URL", style="blue")
+    table.add_column("Title", style="magenta")
     table.add_column("Category", style="green")
+    table.add_column("Last Updated", style="yellow")
     
-    feeds = get_all_feeds()
-    categories = get_available_categories()
-    
-    for feed in feeds:
-        # Find category for feed
-        category = next(
-            (cat for cat in categories if feed in get_feeds_by_category(cat)),
-            "Unknown"
-        )
-        table.add_row(feed.name, feed.url, category.upper())
+    with get_db_session() as db:
+        # Get all feeds from database
+        feeds = db.query(DBFeed).all()
+        
+        for feed in feeds:
+            # Find category for feed
+            categories = get_available_categories()
+            category = next(
+                (cat for cat in categories if any(f.url == feed.url for f in get_feeds_by_category(cat))),
+                "Unknown"
+            )
+            
+            # Format last_updated
+            last_updated = feed.last_updated.strftime("%Y-%m-%d %H:%M") if feed.last_updated else "Never"
+            
+            table.add_row(
+                feed.title or "No Title",  # Use DB title
+                feed.url,
+                feed.description[:50] + "..." if feed.description and len(feed.description) > 50 else (feed.description or "No Description"),
+                category.upper(),
+                last_updated
+            )
     
     console.print(table)
 
@@ -105,6 +120,9 @@ Examples:
   # Update all feeds in a category
   python main.py --update-category tech
   
+  # Import feeds from OPML file
+  python main.py --import-opml feeds.opml
+  
   # Start chat interface
   python main.py --chat
         """
@@ -120,6 +138,7 @@ Examples:
     feed_group.add_argument('--category', type=str, help='Specify a category when adding or updating feeds')
     feed_group.add_argument('--update-all', action='store_true', help='Update all feeds in the database')
     feed_group.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
+    feed_group.add_argument('--import-opml', type=str, metavar='FILE', help='Import feeds from OPML file')
     
     # Information display
     info_group = parser.add_argument_group('Information Display')
@@ -222,6 +241,55 @@ Examples:
                         console.print(f"[bold red]Error updating {feed.name}:[/bold red] {str(e)}")
                     finally:
                         progress.remove_task(task_id)
+    
+    if args.import_opml:
+        try:
+            # Create fetcher instance if not exists
+            if not fetcher:
+                fetcher = RSSFetcher(debug=args.debug)
+            
+            # Use a single progress display for all operations
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                # Parse and merge OPML
+                task_id = progress.add_task("Importing OPML file...")
+                new_feeds = parse_opml(args.import_opml)
+                merged_feeds = merge_feeds(new_feeds, {cat: get_feeds_by_category(cat) for cat in get_available_categories()})
+                update_feed_categories(merged_feeds)
+                progress.remove_task(task_id)
+                
+                # Add all new feeds to database
+                console.print("\n[bold cyan]Adding new feeds to database...[/bold cyan]")
+                for category, feeds in merged_feeds.items():
+                    for feed in feeds:
+                        task_id = progress.add_task(f"Processing: {feed.name}")
+                        try:
+                            # Check if feed already exists in database
+                            with get_db_session() as db:
+                                existing = db.query(DBFeed).filter(DBFeed.url == feed.url).first()
+                                if not existing:
+                                    # Fetch and store new feed
+                                    result = fetcher.fetch_feed(feed.url)
+                                    if result:
+                                        with get_db_session() as db:
+                                            db_feed = db.merge(result)
+                                            console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
+                                    else:
+                                        console.print(f"[yellow]Could not fetch feed:[/yellow] {feed.name}")
+                        except Exception as e:
+                            console.print(f"[red]Error processing {feed.name}:[/red] {str(e)}")
+                        finally:
+                            progress.remove_task(task_id)
+                
+                # Display results
+                console.print("\n[bold green]OPML import complete![/bold green]")
+                display_categories()
+        except Exception as e:
+            console.print(f"[bold red]Error importing OPML:[/bold red] {str(e)}")
+            return
     
     # Start chat interface if requested or if no other action was specified
     if args.chat or not any([args.reset_db, args.add_feeds, args.list_categories, 

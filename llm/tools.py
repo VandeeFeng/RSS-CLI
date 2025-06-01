@@ -36,50 +36,36 @@ def get_db_session():
         db.close()
 
 def get_category_feeds_info(category: str) -> str:
-    """
-    Get information about all feeds in a specific category, including their latest entries
-    
-    Args:
-        category: The category to get feeds for
-    
-    Returns:
-        JSON string containing:
-        - success: bool indicating if the operation was successful
-        - error: error message if any
-        - category: the requested category
-        - feeds: list of feeds with their latest entries
-    """
+    """Get information about feeds in a specific category"""
     with get_db_session() as db:
-        # Validate category
-        available_categories = get_available_categories()
-        if category not in available_categories:
-            error_response = {
-                "success": False,
-                "error": f"Category '{category}' not found. Available categories: {', '.join(available_categories)}",
-                "category": category,
-                "feeds": []
-            }
-            return json.dumps(error_response)
-        
         try:
+            # Get all feeds from database
+            all_feeds = db.query(DBFeed).all()
+            
+            # Get configured categories
+            categories = get_available_categories()
+            
+            # Try to match category (case-insensitive)
+            matched_category = next(
+                (cat for cat in categories if cat.lower() == category.lower()),
+                None
+            )
+            
+            if not matched_category:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Category '{category}' not found",
+                    "available_categories": list(categories)
+                })
+            
+            # Filter feeds by category
+            category_feeds = [
+                feed for feed in all_feeds
+                if any(f.url == feed.url for f in get_feeds_by_category(matched_category))
+            ]
+            
             feeds_info = []
-            
-            # Get configured feeds for this category
-            configured_feeds = get_feeds_by_category(category)
-            
-            for feed_config in configured_feeds:
-                # Get feed from database
-                db_feed = db.query(DBFeed).filter(DBFeed.url == feed_config.url).first()
-                
-                if not db_feed:
-                    feeds_info.append({
-                        "name": feed_config.name,
-                        "url": feed_config.url,
-                        "status": "Not fetched yet",
-                        "entries": []
-                    })
-                    continue
-                
+            for db_feed in category_feeds:
                 # Get recent entries
                 recent_time = datetime.now() - timedelta(hours=24)  # Last 24 hours
                 recent_entries = (
@@ -92,10 +78,10 @@ def get_category_feeds_info(category: str) -> str:
                 )
                 
                 feeds_info.append({
-                    "name": feed_config.name,
-                    "url": feed_config.url,
+                    "name": db_feed.title,  # Use DB title
+                    "url": db_feed.url,
                     "status": "Active",
-                    "title": db_feed.title,
+                    "description": db_feed.description,
                     "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None,
                     "entries": [
                         {
@@ -107,22 +93,19 @@ def get_category_feeds_info(category: str) -> str:
                     ]
                 })
             
-            response = {
+            return json.dumps({
                 "success": True,
-                "category": category,
-                "feeds": feeds_info,
-                "total_feeds": len(feeds_info)
-            }
-            return json.dumps(response)
+                "category": matched_category,
+                "feeds_count": len(feeds_info),
+                "feeds": feeds_info
+            })
             
         except Exception as e:
-            error_response = {
+            logger.error(f"Error getting category feeds info: {str(e)}")
+            return json.dumps({
                 "success": False,
-                "error": str(e),
-                "category": category,
-                "feeds": []
-            }
-            return json.dumps(error_response)
+                "error": str(e)
+            })
 
 def get_feed_details(feed_name: str) -> str:
     """
@@ -424,7 +407,59 @@ def fetch_and_update_feed(feed_name: str) -> str:
         }
         return json.dumps(error_response)
 
+def get_all_categories() -> str:
+    """
+    Get a list of all available feed categories
+    
+    Returns:
+        JSON string containing:
+        - success: bool indicating if the operation was successful
+        - categories: list of category names and their feed counts
+    """
+    try:
+        categories = get_available_categories()
+        category_info = []
+        
+        for category in categories:
+            feeds = get_feeds_by_category(category)
+            category_info.append({
+                "name": category,
+                "feed_count": len(feeds)
+            })
+        
+        response = {
+            "success": True,
+            "categories": category_info,
+            "total_categories": len(categories)
+        }
+        return json.dumps(response)
+        
+    except Exception as e:
+        error_response = {
+            "success": False,
+            "error": str(e),
+            "categories": []
+        }
+        return json.dumps(error_response)
+
 # Create the LangChain tools
+get_all_categories_tool = Tool(
+    name="get_all_categories",
+    description="""
+    Get a list of all available RSS feed categories.
+    This tool returns all category names and the number of feeds in each category.
+    
+    Returns:
+        List of all categories with:
+        - Category names
+        - Number of feeds in each category
+        - Total number of categories
+    
+    Use this tool first to discover available categories before using get_category_feeds.
+    """,
+    func=get_all_categories
+)
+
 get_category_feeds_tool = Tool(
     name="get_category_feeds",
     description="""
@@ -440,6 +475,8 @@ get_category_feeds_tool = Tool(
         - Feed status (Active/Not fetched)
         - Recent entries (last 24 hours)
         - Last update time
+        
+    First use get_all_categories to see available categories, then use this tool to get details for a specific category.
     """,
     func=get_category_feeds_info
 )
@@ -580,22 +617,56 @@ crawl_url_tool = Tool(
 # MCP tools
 def list_feeds() -> str:
     """
-    List all RSS feeds in the database
+    List all available feeds grouped by category
     
     Returns:
-        JSON string containing list of feeds with their metadata
+        JSON string containing:
+        - success: bool indicating if the operation was successful
+        - categories: list of categories with their feeds
     """
+    # Reuse get_all_categories and get_category_feeds_info
     try:
-        response = requests.get("http://localhost:8000/mcp/list_feeds")
-        response.raise_for_status()
-        return json.dumps(response.json())
+        # Get all categories first
+        categories_data = json.loads(get_all_categories())
+        if not categories_data["success"]:
+            return json.dumps(categories_data)
+            
+        # Get feeds for each category
+        result = {
+            "success": True,
+            "categories": []
+        }
+        
+        total_feeds = 0
+        for cat_info in categories_data["categories"]:
+            category_name = cat_info["name"]
+            # Get detailed feed info for this category
+            feeds_data = json.loads(get_category_feeds_info(category_name))
+            if feeds_data["success"]:
+                result["categories"].append({
+                    "name": category_name,
+                    "feeds": [
+                        {
+                            "name": feed["name"],
+                            "url": feed["url"],
+                            "description": feed.get("description", "")
+                        }
+                        for feed in feeds_data["feeds"]
+                    ],
+                    "feed_count": feeds_data["feeds_count"]
+                })
+                total_feeds += feeds_data["feeds_count"]
+        
+        result["total_categories"] = len(result["categories"])
+        result["total_feeds"] = total_feeds
+        return json.dumps(result)
+        
     except Exception as e:
-        error_response = {
+        return json.dumps({
             "success": False,
             "error": str(e),
-            "feeds": []
-        }
-        return json.dumps(error_response)
+            "categories": []
+        })
 
 def search_feeds(query: str) -> str:
     """
@@ -607,20 +678,34 @@ def search_feeds(query: str) -> str:
     Returns:
         JSON string containing matching feeds
     """
+    # Reuse search_related_feeds
     try:
-        response = requests.post(
-            "http://localhost:8000/mcp/feeds/search",
-            json={"query": query}
-        )
-        response.raise_for_status()
-        return json.dumps(response.json())
+        search_results = json.loads(search_related_feeds(query))
+        if not search_results["success"]:
+            return json.dumps(search_results)
+            
+        # Convert to MCP format
+        return json.dumps({
+            "success": True,
+            "results": [
+                {
+                    "name": feed["name"],
+                    "url": feed["url"],
+                    "title": feed["title"],
+                    "description": feed.get("description", ""),
+                    "relevance_score": feed.get("relevance_score", 0)
+                }
+                for feed in search_results["feeds"]
+            ],
+            "total_results": search_results["feeds_found"]
+        })
+        
     except Exception as e:
-        error_response = {
+        return json.dumps({
             "success": False,
             "error": str(e),
             "results": []
-        }
-        return json.dumps(error_response)
+        })
 
 def get_feed_summary(feed_id: int) -> str:
     """
@@ -632,53 +717,58 @@ def get_feed_summary(feed_id: int) -> str:
     Returns:
         JSON string containing feed summary and latest entries
     """
-    try:
-        response = requests.get(f"http://localhost:8000/mcp/feeds/{feed_id}/summary")
-        response.raise_for_status()
-        return json.dumps(response.json())
-    except Exception as e:
-        error_response = {
-            "success": False,
-            "error": str(e),
-            "feed": None,
-            "latest_entries": []
-        }
-        return json.dumps(error_response)
+    with get_db_session() as db:
+        try:
+            # Get feed from database
+            db_feed = db.query(DBFeed).filter(DBFeed.id == feed_id).first()
+            if not db_feed:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Feed with ID {feed_id} not found",
+                    "feed": None
+                })
+            
+            # Reuse get_feed_details logic
+            feed_details = json.loads(get_feed_details(db_feed.title))
+            if not feed_details["success"]:
+                return json.dumps(feed_details)
+            
+            # Convert to MCP format
+            return json.dumps({
+                "success": True,
+                "feed": {
+                    "id": feed_id,
+                    "title": db_feed.title,
+                    "url": db_feed.url,
+                    "description": db_feed.description,
+                    "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None
+                },
+                "latest_entries": feed_details["feed"]["entries_by_period"]["last_24h"]["entries"]
+            })
+            
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": str(e),
+                "feed": None,
+                "latest_entries": []
+            })
 
 # Define MCP tools
 list_feeds_tool = Tool(
     name="list_feeds_feeds_get",
-    description="""
-    List all RSS feeds in the database.
-    Returns a list of feeds with their metadata including ID, title, URL and last update time.
-    """,
+    description="List all RSS feeds in the database.",
     func=list_feeds
 )
 
 search_feeds_tool = Tool(
     name="search_feeds_feeds_search_post",
-    description="""
-    Search for RSS feeds by title or URL.
-    
-    Args:
-        query (str): Search term to find in feed titles or URLs
-        
-    Returns:
-        List of matching feeds with their metadata
-    """,
+    description="Search for RSS feeds by title or URL.",
     func=search_feeds
 )
 
 get_feed_summary_tool = Tool(
     name="get_feed_summary_feeds_feed_id_summary_get",
-    description="""
-    Get a summary of a feed including its latest entries.
-    
-    Args:
-        feed_id (int): ID of the feed to get summary for
-        
-    Returns:
-        Feed metadata and its latest entries
-    """,
+    description="Get a summary of a feed including its latest entries.",
     func=get_feed_summary
 ) 
