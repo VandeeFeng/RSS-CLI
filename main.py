@@ -17,6 +17,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from contextlib import contextmanager
 from database.models import Feed
+import uvicorn
+from api.rss_cli_mcp import app as mcp_app
 
 # Initialize rich console
 console = Console()
@@ -95,6 +97,9 @@ Examples:
   
   # Enable debug mode
   python main.py --chat --debug
+
+  # Start MCP server
+  python main.py --mcp
         """
     )
     
@@ -135,6 +140,12 @@ Examples:
     # Debug options
     debug_group = parser.add_argument_group('Debug Options')
     debug_group.add_argument('--debug', action='store_true', help='Enable debug mode for verbose output')
+
+    # MCP server
+    mcp_group = parser.add_argument_group('MCP Server')
+    mcp_group.add_argument('--mcp', action='store_true', help='Start the MCP server')
+    mcp_group.add_argument('--mcp-port', type=int, default=8000, help='Port for MCP server (default: 8000)')
+    mcp_group.add_argument('--mcp-host', type=str, default="127.0.0.1", help='Host for MCP server (default: 127.0.0.1)')
 
     args = parser.parse_args()
     
@@ -179,10 +190,27 @@ Examples:
     if args.import_opml:
         import_opml(args.import_opml, args.debug)
     
+    if args.mcp:
+        console.print("[bold green]Starting MCP server...[/bold green]")
+        console.print(Panel("""[bold cyan]Configure MCP in Cursor settings:[/bold cyan]
+
+[white]Add the following to your Cursor settings:[/white]
+
+{
+  "rss_mcp": {
+    "url": "http://127.0.0.1:8000/mcp"
+  }
+}
+
+[dim]The server is now running at http://127.0.0.1:8000[/dim]""", border_style="green"))
+        uvicorn.run(mcp_app, host=args.mcp_host, port=args.mcp_port, loop="asyncio")
+        return
+
     # Start chat interface if requested or if no other action was specified
     if args.chat or not any([args.reset_db, args.add_feeds, args.list_categories, 
                            args.list_feeds, args.fetch_all, args.fetch_category,
-                           args.fetch_feed, args.update_feedjs, args.import_opml]):
+                           args.fetch_feed, args.update_feedjs, args.import_opml,
+                           args.mcp]):
         # Create chat instance
         chat = RSSChat(config=config, debug=args.debug)
         
