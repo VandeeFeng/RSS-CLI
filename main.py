@@ -8,7 +8,8 @@ from cli import (
     update_feeds_from_json,
     add_feeds,
     update_category,
-    import_opml
+    import_opml,
+    update_single_feed
 )
 from rich.console import Console
 from rich.markdown import Markdown
@@ -70,6 +71,9 @@ Examples:
   # Add feeds interactively
   python main.py --add-feeds
   
+  # Update a single feed by name
+  python main.py --update-feed "Hacker News"
+  
   # Update all feeds in a category
   python main.py --update-category tech
   
@@ -102,6 +106,7 @@ Examples:
     feed_group.add_argument('--category', type=str, help='Specify a category when updating feeds')
     feed_group.add_argument('--update-all', action='store_true', help='Update all feeds in the database')
     feed_group.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
+    feed_group.add_argument('--update-feed', type=str, metavar='NAME', help='Update a single feed by name')
     feed_group.add_argument('--import-opml', type=str, metavar='FILE', help='Import feeds from OPML file')
     feed_group.add_argument(
         '--update-feedjs',
@@ -146,6 +151,9 @@ Examples:
     
     if args.update_category:
         update_category(args.update_category, args.debug)
+    
+    if args.update_feed:
+        update_single_feed(args.update_feed, args.debug)
     
     if args.update_all:
         add_feeds(None, args.debug)  # Update all feeds

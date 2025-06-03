@@ -5,7 +5,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.markdown import Markdown
 from database.db import SessionLocal
 from database.models import Feed as DBFeed, FeedEntry
-from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed, update_feed_categories, _load_feeds
+from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed, update_feed_categories, _load_feeds, get_feed_by_name
 from rss.rss_fetcher import RSSFetcher
 from rss.opml_handler import parse_opml, merge_feeds
 from datetime import datetime
@@ -284,4 +284,27 @@ def import_opml(file_path: str, debug: bool = False):
             console.print("\n[bold green]OPML import complete![/bold green]")
             display_categories()
     except Exception as e:
-        console.print(f"[bold red]Error importing OPML:[/bold red] {str(e)}") 
+        console.print(f"[bold red]Error importing OPML:[/bold red] {str(e)}")
+
+def update_single_feed(feed_name: str, debug: bool = False):
+    """Update a specific feed by name"""
+    fetcher = RSSFetcher(debug=debug)
+    
+    try:
+        feed_config = get_feed_by_name(feed_name)
+        if not feed_config:
+            console.print(f"[bold red]Error:[/bold red] Feed '{feed_name}' not found.")
+            return
+        
+        console.print(f"\n[bold cyan]Updating feed:[/bold cyan] {feed_name}")
+        
+        with get_db_session() as db:
+            result = fetcher.fetch_feed(feed_config.url)
+            if result:
+                db_feed = db.merge(result)
+                console.print(Panel(format_feed_info(db_feed), title=feed_name, border_style="green"))
+            else:
+                console.print(f"[bold red]Failed to update feed:[/bold red] {feed_name}")
+                
+    except Exception as e:
+        console.print(f"[bold red]Error updating {feed_name}:[/bold red] {str(e)}") 

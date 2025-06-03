@@ -17,5 +17,6 @@ from .commands import (
     update_feeds_from_json,
     add_feeds,
     update_category,
-    import_opml
+    import_opml,
+    update_single_feed
 )
