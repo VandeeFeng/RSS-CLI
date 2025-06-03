@@ -8,7 +8,7 @@ from config import config
 class Feed:
     url: str
     name: str
-    title: str = ""  # RSS feed's actual title (will be fetched)
+    description: str = ""  # RSS feed's actual description (will be fetched)
     update_interval: int = 3600  # Update interval in seconds
 
 # Global feed categories that will be loaded from file

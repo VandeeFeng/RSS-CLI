@@ -10,7 +10,7 @@ class Feed(Base):
     
     id = Column(Integer, primary_key=True)
     url = Column(String, unique=True, nullable=False)
-    title = Column(String)
+    name = Column(String)
     description = Column(Text)
     last_updated = Column(DateTime)
     entries = relationship('FeedEntry', back_populates='feed')

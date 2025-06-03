@@ -27,17 +27,20 @@ def format_feed_info(feed, entries=None):
     """Format feed information for display"""
     # Handle both Feed and DBFeed objects
     if isinstance(feed, Feed):
-        title = feed.name
+        name = feed.name
         url = feed.url
+        description = ""
         last_updated = None
     else:
-        title = feed.title or feed.name
+        name = feed.name
         url = feed.url
+        description = feed.description or "No description"
         last_updated = feed.last_updated
     
     info = [
-        f"[bold cyan]Feed:[/bold cyan] {title}",
+        f"[bold cyan]Feed:[/bold cyan] {name}",
         f"[bold blue]URL:[/bold blue] {url}",
+        f"[bold magenta]Description:[/bold magenta] {description}",
         f"[bold green]Last Updated:[/bold green] {last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_updated else 'Never'}"
     ]
     
@@ -73,7 +76,7 @@ def display_feeds():
     table = Table(title="Configured Feeds")
     table.add_column("Name", style="cyan")
     table.add_column("URL", style="blue")
-    table.add_column("Title", style="magenta")
+    table.add_column("Description", style="magenta")
     table.add_column("Category", style="green")
     table.add_column("Last Updated", style="yellow")
     
@@ -90,7 +93,7 @@ def display_feeds():
             last_updated = feed.last_updated.strftime("%Y-%m-%d %H:%M") if feed.last_updated else "Never"
             
             table.add_row(
-                feed.title or "No Title",
+                feed.name or "No Name",
                 feed.url,
                 feed.description[:50] + "..." if feed.description and len(feed.description) > 50 else (feed.description or "No Description"),
                 category.upper(),
@@ -114,7 +117,7 @@ def update_feeds_from_json(debug: bool = False):
         db_feeds = db.query(DBFeed).all()
         for db_feed in db_feeds:
             if db_feed.url not in json_feed_urls:
-                console.print(f"[yellow]Removing feed not in feeds.json:[/yellow] {db_feed.title or db_feed.url}")
+                console.print(f"[yellow]Removing feed not in feeds.json:[/yellow] {db_feed.name or db_feed.url}")
                 db.delete(db_feed)
                 changes_made = True
         
@@ -122,15 +125,15 @@ def update_feeds_from_json(debug: bool = False):
         for feed in all_feeds:
             existing_feed = db.query(DBFeed).filter(DBFeed.url == feed.url).first()
             if existing_feed:
-                if existing_feed.title != feed.name:
-                    console.print(f"[cyan]Updating feed name:[/cyan] {existing_feed.title} -> {feed.name}")
-                    existing_feed.title = feed.name
+                if existing_feed.name != feed.name:
+                    console.print(f"[cyan]Updating feed name:[/cyan] {existing_feed.name} -> {feed.name}")
+                    existing_feed.name = feed.name
                     changes_made = True
             else:
                 console.print(f"[green]Adding new feed:[/green] {feed.name}")
                 new_feed = DBFeed(
                     url=feed.url,
-                    title=feed.name,
+                    name=feed.name,
                     last_updated=datetime.now()
                 )
                 db.add(new_feed)
@@ -181,7 +184,7 @@ def add_feeds(category: str = None, debug: bool = False):
                 
                 # Use fetched title if name not provided
                 if not name:
-                    name = result.title or url
+                    name = result.name or url
                 
                 # Add to feeds.json
                 feed = Feed(url=url, name=name)
