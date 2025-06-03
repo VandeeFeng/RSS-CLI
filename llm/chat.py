@@ -146,19 +146,23 @@ class RSSChat:
             with get_db_session() as db:
                 current_input = str(message)
                 agent_inputs = {"input": current_input}
+                final_answer_sent = False
                 
                 for chunk in self.agent_executor.stream(agent_inputs):
                     if isinstance(chunk, (AIMessage, HumanMessage)):
-                        yield str(chunk.content)
+                        if not final_answer_sent:  # Only yield if final answer hasn't been sent
+                            yield str(chunk.content)
                     elif isinstance(chunk, dict):
                         if "intermediate_steps" in chunk:
                             for step in chunk["intermediate_steps"]:
-                                action, observation_obj = step # observation_obj is now a string
-                                yield f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}\\n"
-                                yield f"Observation: {self.format_observation(str(observation_obj))}\\n" # Pass string to format_observation
-                        if "output" in chunk:
-                            yield f"\\nFinal Answer: {str(chunk['output'])}\\n"
-                    elif isinstance(chunk, str):
+                                action, observation_obj = step
+                                if not final_answer_sent:  # Only yield if final answer hasn't been sent
+                                    yield f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}\\n"
+                                    yield f"Observation: {self.format_observation(str(observation_obj))}\\n"
+                        if "output" in chunk and not final_answer_sent:
+                            yield f"Final Answer: {str(chunk['output'])}".strip()
+                            final_answer_sent = True
+                    elif isinstance(chunk, str) and not final_answer_sent:
                         yield chunk
                 
         except Exception as e:
@@ -187,10 +191,10 @@ class RSSChat:
                             result.append(f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}")
                             result.append(f"Observation: {self.format_observation(str(observation_obj))}") # Pass string
                         if "output" in response:
-                            result.append(f"\\nFinal Answer: {str(response['output'])}")
+                            result.append(f"\\nFinal Answer: {str(response['output'])}".strip())
                         return "\\n".join(result)
                     elif "output" in response:
-                        return str(response["output"])
+                        return str(response["output"]).strip()
                 elif isinstance(response, str):
                     return response
                 
