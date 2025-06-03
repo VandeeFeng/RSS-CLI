@@ -213,10 +213,24 @@ class RSSFetcher:
             logger.error(f"Error fetching feed: {str(e)}")
             return None
         
-    def search_similar_entries(self, query: str, limit: int = 5) -> List[FeedEntry]:
+    def search_similar_entries(self, query: str, limit: int = 5, ef_search: int = 40) -> List[FeedEntry]:
+        """
+        Search for similar entries using HNSW index
+        
+        Args:
+            query: The search query
+            limit: Maximum number of results to return
+            ef_search: HNSW ef_search parameter (higher values = more accurate but slower)
+            
+        Returns:
+            List of similar FeedEntry objects
+        """
         query_embedding = self.embeddings.embed_query(query)
         with get_db_session() as db:
-            # Using pgvector's L2 distance search
+            # Set ef_search parameter for this query
+            db.execute("SET hnsw.ef_search = :ef_search", {"ef_search": ef_search})
+            
+            # Using HNSW index for approximate nearest neighbor search
             results = db.query(FeedEntry).order_by(
                 FeedEntry.embedding.l2_distance(query_embedding)
             ).limit(limit).all()

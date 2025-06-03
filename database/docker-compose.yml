@@ -3,7 +3,7 @@ name: rss-cli
 
 services:
   postgres:
-    image: ankane/pgvector:latest
+    image: pgvector/pgvector:pg17
     restart: always
     environment:
       POSTGRES_USER: postgres

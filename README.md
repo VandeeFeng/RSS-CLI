@@ -322,7 +322,7 @@ The MCP server provides the following endpoints:
 - **Python 3.8+**: Main development language
 - **PostgreSQL + pgvector**: Vector database for semantic search
   - Stores RSS feeds and entries
-  - Handles vector similarity searches
+  - Uses HNSW (Hierarchical Navigable Small World) indexing for fast vector similarity search
   - Manages feed metadata and content
 
 ### AI & Language Models
@@ -334,11 +334,5 @@ The MCP server provides the following endpoints:
   - Handles tool integrations
   - Provides agent capabilities
 
-### Key Libraries
-- **SQLAlchemy**: Database ORM and management
-- **feedparser**: RSS feed parsing and handling
-- **Rich**: Terminal UI and formatting
-- **UV**: Modern Python package manager
-- **python-dotenv**: Environment configuration
 
 
