@@ -1,4 +1,3 @@
-from typing import List, Dict, Optional, Any
 from langchain.tools import Tool
 from rss.feeds import get_feeds_by_category, get_available_categories, get_feed_by_name, get_all_feeds
 from database.db import SessionLocal
@@ -12,7 +11,6 @@ import logging
 import json
 from crawl4ai import AsyncWebCrawler
 import asyncio
-import requests
 
 # Initialize embeddings model
 embeddings_model = OllamaEmbeddings(
@@ -78,14 +76,14 @@ def get_category_feeds_info(category: str) -> str:
                 )
                 
                 feeds_info.append({
-                    "name": db_feed.title,  # Use DB title
+                    "name": db_feed.name,
                     "url": db_feed.url,
                     "status": "Active",
                     "description": db_feed.description,
                     "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None,
                     "entries": [
                         {
-                            "title": entry.title,
+                            "title": entry.title,  # Entry title
                             "link": entry.link,
                             "published": entry.published_date.isoformat() if entry.published_date else None
                         }
@@ -121,6 +119,9 @@ def get_feed_details(feed_name: str) -> str:
         - feed: detailed feed information and entries
     """
     with get_db_session() as db:
+        # Clean feed name by removing extra whitespace and newlines
+        feed_name = feed_name.strip()
+        
         # Get feed configuration
         feed_config = get_feed_by_name(feed_name)
         if not feed_config:
@@ -171,7 +172,7 @@ def get_feed_details(feed_name: str) -> str:
                     
                 age = now - entry.published_date
                 entry_info = {
-                    "title": entry.title,
+                    "title": entry.title,  # Entry title
                     "link": entry.link,
                     "published": entry.published_date.isoformat(),
                     "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content
@@ -190,7 +191,6 @@ def get_feed_details(feed_name: str) -> str:
                 "name": feed_config.name,
                 "url": feed_config.url,
                 "status": "Active",
-                "title": db_feed.title,
                 "description": db_feed.description,
                 "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None,
                 "entries_count": len(entries),
@@ -353,6 +353,9 @@ def fetch_and_update_feed(feed_name: str) -> str:
         - feed: feed information if successful
     """
     try:
+        # Clean feed name by removing extra whitespace and newlines
+        feed_name = feed_name.strip()
+        
         feed_config = get_feed_by_name(feed_name)
         if not feed_config:
             error_response = {
@@ -383,7 +386,6 @@ def fetch_and_update_feed(feed_name: str) -> str:
                     "feed": {
                         "name": feed_config.name,
                         "url": feed_config.url,
-                        "title": result.title,
                         "description": result.description,
                         "last_updated": result.last_updated.isoformat() if result.last_updated else None
                     }
