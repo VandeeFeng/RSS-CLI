@@ -39,9 +39,8 @@ class RSSFetcher:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             
-            # Try to detect encoding from response headers or content
-            encoding = response.encoding or 'utf-8'
-            content = response.content.decode(encoding, errors='replace')
+            # Force UTF-8 encoding
+            content = response.content.decode('utf-8', errors='replace')
             
             # Parse the content with feedparser
             feed_data = feedparser.parse(content)
@@ -72,8 +71,8 @@ class RSSFetcher:
                     if existing_feed:
                         if self.debug:
                             logger.debug(f"Feed already exists: {url}")
-                        # Update the feed description and last_updated
-                        existing_feed.name = feed_data.feed.get('title', '')
+                        # Update the feed title, description and last_updated
+                        existing_feed.title = feed_data.feed.get('title', '')  # RSS feed title
                         existing_feed.description = description
                         existing_feed.last_updated = datetime.now()
                         db.commit()
@@ -82,7 +81,7 @@ class RSSFetcher:
                     # Create new feed
                     feed = DBFeed(
                         url=url,
-                        name=feed_data.feed.get('title', ''),
+                        title=feed_data.feed.get('title', ''),  # RSS feed title
                         description=description,
                         last_updated=datetime.now()
                     )
