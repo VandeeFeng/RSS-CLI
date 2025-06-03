@@ -10,6 +10,7 @@ from rss.rss_fetcher import RSSFetcher
 from rss.opml_handler import parse_opml, merge_feeds
 from datetime import datetime
 from contextlib import contextmanager
+from config import config
 
 # Initialize rich console
 console = Console()
@@ -224,7 +225,11 @@ def fetch_category_feeds(category: str, debug: bool = False):
         console.print("Available categories:", ", ".join(get_available_categories()))
         return
     
-    fetcher = RSSFetcher(debug=debug)
+    fetcher = RSSFetcher(
+        debug=debug,
+        max_entries=config.rss.max_entries_per_feed,
+        max_age_hours=config.rss.max_age_hours
+    )
     console.print(f"\n[bold cyan]Fetching latest content for feeds in category:[/bold cyan] {category}")
     feeds_to_update = get_feeds_by_category(category)
     
@@ -291,7 +296,11 @@ def import_opml(file_path: str, debug: bool = False):
 
 def fetch_single_feed(feed_name: str, debug: bool = False):
     """Fetch latest content for a specific feed by name"""
-    fetcher = RSSFetcher(debug=debug)
+    fetcher = RSSFetcher(
+        debug=debug,
+        max_entries=config.rss.max_entries_per_feed,
+        max_age_hours=config.rss.max_age_hours
+    )
     
     try:
         feed_config = get_feed_by_name(feed_name)
@@ -314,7 +323,11 @@ def fetch_single_feed(feed_name: str, debug: bool = False):
 
 def fetch_all_feeds(debug: bool = False):
     """Fetch latest content for all feeds in the system"""
-    fetcher = RSSFetcher(debug=debug)
+    fetcher = RSSFetcher(
+        debug=debug,
+        max_entries=config.rss.max_entries_per_feed,
+        max_age_hours=config.rss.max_age_hours
+    )
     console.print("\n[bold cyan]Fetching latest content for all feeds[/bold cyan]")
     feeds_to_update = get_all_feeds()
     

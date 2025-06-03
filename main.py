@@ -75,6 +75,9 @@ Examples:
   # Fetch latest content for a single feed
   python main.py --fetch-feed "Hacker News"
   
+  # Fetch latest content for a single feed with custom limits
+  python main.py --fetch-feed "Hacker News" -items 5 -hours 12
+  
   # Fetch latest content for all feeds in a category
   python main.py --fetch-category tech
   
@@ -115,6 +118,11 @@ Examples:
         help='Update feeds configuration from feeds.json'
     )
     
+    # Feed fetch options
+    fetch_group = parser.add_argument_group('Feed Fetch Options')
+    fetch_group.add_argument('-items', type=int, help='Maximum number of items to fetch per feed (overrides RSS_MAX_ENTRIES_PER_FEED)')
+    fetch_group.add_argument('-hours', type=int, help='Maximum age of entries in hours (overrides RSS_MAX_AGE_HOURS)')
+    
     # Information display
     info_group = parser.add_argument_group('Information Display')
     info_group.add_argument('--list-categories', action='store_true', help='List all available feed categories')
@@ -129,6 +137,12 @@ Examples:
     debug_group.add_argument('--debug', action='store_true', help='Enable debug mode for verbose output')
 
     args = parser.parse_args()
+    
+    # Override config values if custom limits are provided
+    if args.items is not None:
+        config.rss.max_entries_per_feed = args.items
+    if args.hours is not None:
+        config.rss.max_age_hours = args.hours
     
     if args.list_categories:
         display_categories()

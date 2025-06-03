@@ -3,12 +3,14 @@ import feedparser
 from typing import List, Optional
 from datetime import datetime, timedelta
 from dateutil.parser import parse
+from dateutil.tz import tzlocal, tzutc
 from langchain_community.embeddings import OllamaEmbeddings
 from config import config
 from database.models import Feed as DBFeed, FeedEntry
 from database.db import SessionLocal
 from contextlib import contextmanager
 import requests
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger('rss_ai')
 
@@ -22,7 +24,7 @@ def get_db_session():
         db.close()
 
 class RSSFetcher:
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, max_entries: int = None, max_age_hours: int = None):
         self.debug = debug
         if debug:
             logger.setLevel(logging.DEBUG)
@@ -32,6 +34,10 @@ class RSSFetcher:
             base_url=config.ollama.base_url,
             model=config.ollama.embedding_model
         )
+        
+        # Set custom limits if provided
+        self.max_entries = max_entries if max_entries is not None else config.rss.max_entries_per_feed
+        self.max_age_hours = max_age_hours if max_age_hours is not None else config.rss.max_age_hours
     
     def fetch_feed(self, url: str) -> Optional[DBFeed]:
         try:
@@ -68,89 +74,130 @@ class RSSFetcher:
                 try:
                     # Check if feed already exists
                     existing_feed = db.query(DBFeed).filter(DBFeed.url == url).first()
+                    current_time = datetime.now(tzutc())
+                    
                     if existing_feed:
                         if self.debug:
                             logger.debug(f"Feed already exists: {url}")
                         # Update the feed title, description and last_updated
                         existing_feed.title = feed_data.feed.get('title', '')  # RSS feed title
                         existing_feed.description = description
-                        existing_feed.last_updated = datetime.now()
+                        existing_feed.last_updated = current_time
                         db.commit()
-                        return db.merge(existing_feed)
-                    
-                    # Create new feed
-                    feed = DBFeed(
-                        url=url,
-                        title=feed_data.feed.get('title', ''),  # RSS feed title
-                        description=description,
-                        last_updated=datetime.now()
-                    )
-                    
-                    db.add(feed)
-                    db.flush()
+                        feed = db.merge(existing_feed)
+                    else:
+                        # Create new feed
+                        feed = DBFeed(
+                            url=url,
+                            title=feed_data.feed.get('title', ''),  # RSS feed title
+                            description=description,
+                            last_updated=current_time
+                        )
+                        db.add(feed)
+                        db.flush()
 
-                    # Calculate the cutoff time for entries
-                    cutoff_time = datetime.now() - timedelta(hours=config.rss.max_age_hours)
                     entries_added = 0
+                    entries_skipped = 0
+                    cutoff_time = current_time - timedelta(hours=self.max_age_hours)
                     
                     if self.debug:
                         logger.debug(f"Found {len(feed_data.entries)} entries")
+                        logger.debug(f"Cutoff time: {cutoff_time}")
+                        logger.debug(f"Max entries: {self.max_entries}")
+                        logger.debug(f"Max age hours: {self.max_age_hours}")
                     
+                    # Process entries in order (feedparser usually returns newest first)
                     for entry in feed_data.entries:
                         # Stop if we've reached the maximum number of entries
-                        if entries_added >= config.rss.max_entries_per_feed:
+                        if entries_added >= self.max_entries:
                             if self.debug:
-                                logger.debug(f"Reached maximum entries limit ({config.rss.max_entries_per_feed})")
+                                logger.debug(f"Reached maximum entries limit ({self.max_entries})")
                             break
                             
-                        content = entry.get('content', [{}])[0].get('value', '') or entry.get('description', '')
-                        published = entry.get('published')
-                        if published:
+                        try:
+                            # Parse published date first to check time limit
+                            published = entry.get('published')
+                            if published:
+                                try:
+                                    published_date = parse(published)
+                                    # Ensure timezone awareness
+                                    if published_date.tzinfo is None:
+                                        published_date = published_date.replace(tzinfo=tzutc())
+                                except:
+                                    published_date = current_time
+                            else:
+                                published_date = current_time
+                            
+                            # Skip entries older than cutoff time
+                            if published_date < cutoff_time:
+                                if self.debug:
+                                    logger.debug(f"Skipping entry: older than {self.max_age_hours} hours")
+                                entries_skipped += 1
+                                continue
+                            
+                            content = entry.get('content', [{}])[0].get('value', '') or entry.get('description', '')
+                            title = entry.get('title', '')
+                            link = entry.get('link', '')
+                            
+                            if not title or not content or not link:
+                                if self.debug:
+                                    logger.debug(f"Skipping entry: missing title, content, or link")
+                                entries_skipped += 1
+                                continue
+                            
+                            # Check if entry already exists
+                            existing_entry = db.query(FeedEntry).filter(
+                                FeedEntry.feed_id == feed.id,
+                                FeedEntry.link == link
+                            ).first()
+                            
+                            if existing_entry:
+                                if self.debug:
+                                    logger.debug(f"Skipping duplicate entry: {title}")
+                                entries_skipped += 1
+                                continue
+                                    
                             try:
-                                published_date = parse(published)
-                                # Skip entries older than the cutoff time
-                                if published_date < cutoff_time:
-                                    continue
-                            except:
-                                published_date = datetime.now()
-                        else:
-                            published_date = datetime.now()
-                        
-                        title = entry.get('title', '')
-                        if not title or not content:
+                                embedding = self.embeddings.embed_query(f"{title} {content}")
+                            except Exception as e:
+                                logger.error(f"Error generating embedding for entry {title}: {str(e)}")
+                                entries_skipped += 1
+                                continue
+                            
+                            feed_entry = FeedEntry(
+                                feed_id=feed.id,
+                                title=title,
+                                content=content,
+                                link=link,
+                                published_date=published_date,
+                                embedding=embedding
+                            )
+                            
+                            db.add(feed_entry)
+                            entries_added += 1
+                            
                             if self.debug:
-                                logger.debug(f"Skipping entry: missing title or content")
-                            continue
+                                logger.debug(f"Added entry: {title}")
                                 
-                        embedding = self.embeddings.embed_query(f"{title} {content}")
-                        
-                        feed_entry = FeedEntry(
-                            feed_id=feed.id,
-                            title=title,
-                            content=content,
-                            link=entry.get('link', ''),
-                            published_date=published_date,
-                            embedding=embedding
-                        )
-                        
-                        db.add(feed_entry)
-                        entries_added += 1
-                        if self.debug:
-                            logger.debug(f"Added entry: {title}")
-                    
-                    if self.debug:
-                        logger.debug(f"Successfully added {entries_added} entries")
+                        except Exception as e:
+                            logger.error(f"Error processing entry: {str(e)}")
+                            entries_skipped += 1
+                            continue
                     
                     db.commit()
-                    return db.merge(feed)
+                    
+                    if self.debug:
+                        logger.debug(f"Added {entries_added} entries, skipped {entries_skipped} entries")
+                    
+                    return feed
                     
                 except Exception as e:
+                    logger.error(f"Database error: {str(e)}")
                     db.rollback()
-                    logger.error(f"Error processing feed: {str(e)}")
-                    raise e
+                    return None
                     
         except Exception as e:
-            logger.error(f"Error fetching feed from {url}: {str(e)}")
+            logger.error(f"Error fetching feed: {str(e)}")
             return None
         
     def search_similar_entries(self, query: str, limit: int = 5) -> List[FeedEntry]:

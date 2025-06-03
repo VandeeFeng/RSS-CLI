@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, create_engine, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import ARRAY
 from pgvector.sqlalchemy import Vector
@@ -26,4 +26,8 @@ class FeedEntry(Base):
     published_date = Column(DateTime)
     embedding = Column(Vector(768))
     
-    feed = relationship('Feed', back_populates='entries') 
+    feed = relationship('Feed', back_populates='entries')
+    
+    __table_args__ = (
+        UniqueConstraint('feed_id', 'link', name='uix_feed_entry_link'),
+    ) 

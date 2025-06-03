@@ -24,6 +24,13 @@ class RSSConfig:
     # Path to feeds configuration file
     feeds_file: str = os.getenv("RSS_FEEDS_FILE", "feeds.json")
 
+    def update_limits(self, max_entries: int = None, max_age: int = None):
+        """Update the RSS feed limits"""
+        if max_entries is not None:
+            self.max_entries_per_feed = max_entries
+        if max_age is not None:
+            self.max_age_hours = max_age
+
 class Config:
     def __init__(self):
         self.db = DatabaseConfig()
