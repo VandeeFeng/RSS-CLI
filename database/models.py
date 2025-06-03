@@ -13,6 +13,7 @@ class Feed(Base):
     name = Column(String)
     description = Column(Text)
     last_updated = Column(DateTime)
+    category = Column(String)
     entries = relationship('FeedEntry', back_populates='feed')
 
 class FeedEntry(Base):

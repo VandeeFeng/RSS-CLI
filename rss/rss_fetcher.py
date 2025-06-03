@@ -11,6 +11,7 @@ from database.db import SessionLocal
 from contextlib import contextmanager
 import requests
 from sqlalchemy.exc import IntegrityError
+from . import FEED_CATEGORIES, _load_feeds
 
 logger = logging.getLogger('rss_ai')
 
@@ -83,15 +84,27 @@ class RSSFetcher:
                         existing_feed.title = feed_data.feed.get('title', '')  # RSS feed title
                         existing_feed.description = description
                         existing_feed.last_updated = current_time
+                        # Get category from feeds.json
+                        if not FEED_CATEGORIES:
+                            _load_feeds()
+                        for cat, feeds in FEED_CATEGORIES.items():
+                            if any(f.url == url for f in feeds):
+                                existing_feed.category = cat
+                                break
                         db.commit()
                         feed = db.merge(existing_feed)
                     else:
                         # Create new feed
+                        if not FEED_CATEGORIES:
+                            _load_feeds()
+                        category = next((cat for cat, feeds in FEED_CATEGORIES.items() 
+                                      if any(f.url == url for f in feeds)), None)
                         feed = DBFeed(
                             url=url,
                             title=feed_data.feed.get('title', ''),  # RSS feed title
                             description=description,
-                            last_updated=current_time
+                            last_updated=current_time,
+                            category=category
                         )
                         db.add(feed)
                         db.flush()

@@ -2,10 +2,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.markdown import Markdown
 from database.db import SessionLocal
-from database.models import Feed as DBFeed, FeedEntry
-from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed, update_feed_categories, _load_feeds, get_feed_by_name
+from database.models import Feed as DBFeed
+from rss.feeds import get_all_feeds, get_feeds_by_category, get_available_categories, Feed, update_feed_categories, _load_feeds, get_feed_by_name, FEED_CATEGORIES
 from rss.rss_fetcher import RSSFetcher
 from rss.opml_handler import parse_opml, merge_feeds
 from datetime import datetime
@@ -85,19 +84,13 @@ def display_feeds():
         feeds = db.query(DBFeed).all()
         
         for feed in feeds:
-            categories = get_available_categories()
-            category = next(
-                (cat for cat in categories if any(f.url == feed.url for f in get_feeds_by_category(cat))),
-                "Unknown"
-            )
-            
             last_updated = feed.last_updated.strftime("%Y-%m-%d %H:%M") if feed.last_updated else "Never"
             
             table.add_row(
                 feed.name or "No Name",
                 feed.url,
                 feed.description[:50] + "..." if feed.description and len(feed.description) > 50 else (feed.description or "No Description"),
-                category.upper(),
+                feed.category.upper() if feed.category else "Unknown",
                 last_updated
             )
     
@@ -110,7 +103,12 @@ def update_feeds_from_json(debug: bool = False):
     all_feeds = get_all_feeds()
     
     json_feed_urls = {feed.url for feed in all_feeds}
-    json_feed_map = {feed.url: feed for feed in all_feeds}
+    
+    # Get category mapping
+    feed_categories = {}
+    for category, feeds in FEED_CATEGORIES.items():
+        for feed in feeds:
+            feed_categories[feed.url] = category
     
     changes_made = False
     with get_db_session() as db:
@@ -126,15 +124,26 @@ def update_feeds_from_json(debug: bool = False):
         for feed in all_feeds:
             existing_feed = db.query(DBFeed).filter(DBFeed.url == feed.url).first()
             if existing_feed:
+                update_needed = False
                 if existing_feed.name != feed.name:
                     console.print(f"[cyan]Updating feed name:[/cyan] {existing_feed.name} -> {feed.name}")
                     existing_feed.name = feed.name
+                    update_needed = True
+                
+                category = feed_categories.get(feed.url)
+                if existing_feed.category != category:
+                    console.print(f"[cyan]Updating feed category:[/cyan] {existing_feed.category or 'None'} -> {category}")
+                    existing_feed.category = category
+                    update_needed = True
+                
+                if update_needed:
                     changes_made = True
             else:
                 console.print(f"[green]Adding new feed:[/green] {feed.name}")
                 new_feed = DBFeed(
                     url=feed.url,
                     name=feed.name,
+                    category=feed_categories.get(feed.url),
                     last_updated=datetime.now()
                 )
                 db.add(new_feed)

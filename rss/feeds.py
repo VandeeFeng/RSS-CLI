@@ -10,6 +10,7 @@ class Feed:
     name: str
     description: str = ""  # RSS feed's actual description (will be fetched)
     update_interval: int = 3600  # Update interval in seconds
+    category: str = ""  # Feed category
 
 # Global feed categories that will be loaded from file
 FEED_CATEGORIES: Dict[str, List[Feed]] = {}
