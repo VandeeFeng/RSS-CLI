@@ -106,17 +106,34 @@ def update_feeds_from_json(debug: bool = False):
     
     # Get category mapping
     feed_categories = {}
+    categories_to_remove = set()
+    
     for category, feeds in FEED_CATEGORIES.items():
         for feed in feeds:
             feed_categories[feed.url] = category
     
     changes_made = False
     with get_db_session() as db:
-        # Remove feeds not in feeds.json
+        # Check for categories to remove
         db_feeds = db.query(DBFeed).all()
+        db_categories = {feed.category for feed in db_feeds if feed.category}
+        json_categories = set(FEED_CATEGORIES.keys())
+        
+        # Find categories that exist in db but not in json
+        removed_categories = db_categories - json_categories
+        if removed_categories:
+            for category in removed_categories:
+                console.print(f"[yellow]Removing category:[/yellow] {category}")
+                # Remove all feeds in this category
+                for db_feed in db_feeds:
+                    if db_feed.category == category:
+                        db.delete(db_feed)
+                        changes_made = True
+        
+        # Remove individual feeds not in feeds.json
         for db_feed in db_feeds:
-            if db_feed.url not in json_feed_urls:
-                console.print(f"[yellow]Removing feed not in feeds.json:[/yellow] {db_feed.name or db_feed.url}")
+            if db_feed.url not in json_feed_urls and db_feed.category in json_categories:
+                console.print(f"[yellow]Removing feed in category {db_feed.category}:[/yellow] {db_feed.name or db_feed.url}")
                 db.delete(db_feed)
                 changes_made = True
         
@@ -132,7 +149,7 @@ def update_feeds_from_json(debug: bool = False):
                 
                 category = feed_categories.get(feed.url)
                 if existing_feed.category != category:
-                    console.print(f"[cyan]Updating feed category:[/cyan] {existing_feed.category or 'None'} -> {category}")
+                    console.print(f"[cyan]Updating feed category for '{feed.name}':[/cyan] {existing_feed.category or 'None'} -> {category}")
                     existing_feed.category = category
                     update_needed = True
                 
