@@ -156,40 +156,33 @@ The OPML import will:
 - Fetch initial content for new feeds
 
 b) **Manual Configuration** (Optional)
-You can customize feeds by editing `rss/feeds.py`:
+You can customize feeds by editing `feeds.json`:
 
-```python
-# Edit rss/feeds.py to customize your RSS sources
-FEED_CATEGORIES = {
+```json
+{
     "tech": [
-        Feed(
-            url="https://news.ycombinator.com/rss",
-            name="Hacker News"
-        ),
-        Feed(
-            url="https://techcrunch.com/feed/",
-            name="TechCrunch"
-        )
+        {
+            "url": "https://news.ycombinator.com/rss",
+            "name": "Hacker News"
+        },
+        {
+            "url": "https://techcrunch.com/feed/",
+            "name": "TechCrunch"
+        }
     ],
     "programming": [
-        Feed(
-            url="https://www.reddit.com/r/programming/.rss",
-            name="Reddit Programming"
-        )
+        {
+            "url": "https://www.reddit.com/r/programming/.rss",
+            "name": "Reddit Programming"
+        }
     ]
 }
 ```
 
-Feed Configuration Options:
-- `url`: RSS feed URL (required)
-- `name`: Display name for the feed (required)
-- `update_interval`: Update frequency in seconds (optional, default: 3600)
-
-You can:
-- Add new categories
-- Add/remove feeds in existing categories
-- Customize update intervals per feed
-- Group feeds by your own categories
+The setup script will automatically create a `feeds.json` file from `feeds_example.json` if it doesn't exist. You can then:
+- Edit `feeds.json` directly to add/modify feeds
+- Run `python main.py --update-feedjs` to apply your changes
+- Use `python main.py --add-feeds` to add example feeds
 
 4. **Setup PostgreSQL with Docker** (recommended)
 ```bash
@@ -298,11 +291,11 @@ The LLM agent automatically:
 
 To start the MCP server:
 ```bash
-# Start the MCP server on default port 8000
-python -m api.rss_cli_mcp
+# Start the MCP server (default: http://127.0.0.1:8000)
+python main.py --mcp
 
-# Or specify a custom port
-PORT=8080 python -m api.rss_cli_mcp
+# Or specify a custom host and port
+python main.py --mcp --mcp-host 0.0.0.0 --mcp-port 8080
 ```
 
 Configure MCP in Cursor settings:
