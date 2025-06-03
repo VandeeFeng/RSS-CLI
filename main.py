@@ -7,9 +7,10 @@ from cli import (
     display_feeds,
     update_feeds_from_json,
     add_feeds,
-    update_category,
+    fetch_category_feeds,
     import_opml,
-    update_single_feed
+    fetch_single_feed,
+    fetch_all_feeds
 )
 from rich.console import Console
 from rich.markdown import Markdown
@@ -71,16 +72,16 @@ Examples:
   # Add feeds interactively
   python main.py --add-feeds
   
-  # Update a single feed by name
-  python main.py --update-feed "Hacker News"
+  # Fetch latest content for a single feed
+  python main.py --fetch-feed "Hacker News"
   
-  # Update all feeds in a category
-  python main.py --update-category tech
+  # Fetch latest content for all feeds in a category
+  python main.py --fetch-category tech
   
-  # Update all feeds in database
-  python main.py --update-all
+  # Fetch latest content for all feeds
+  python main.py --fetch-all
   
-  # Update feeds from feeds.json
+  # Update feeds configuration from feeds.json
   python main.py --update-feedjs
   
   # Import feeds from OPML file
@@ -103,15 +104,15 @@ Examples:
     feed_group.add_argument('--add-feeds', action='store_true', 
         help='Interactively add new RSS feeds. You will be prompted to enter category, URL, and name for each feed. '
              'Feeds will be saved to both feeds.json and database.')
-    feed_group.add_argument('--category', type=str, help='Specify a category when updating feeds')
-    feed_group.add_argument('--update-all', action='store_true', help='Update all feeds in the database')
-    feed_group.add_argument('--update-category', type=str, help='Update all feeds in a specific category')
-    feed_group.add_argument('--update-feed', type=str, metavar='NAME', help='Update a single feed by name')
+    feed_group.add_argument('--category', type=str, help='Specify a category when fetching feeds')
+    feed_group.add_argument('--fetch-all', action='store_true', help='Fetch latest content for all feeds')
+    feed_group.add_argument('--fetch-category', type=str, help='Fetch latest content for all feeds in a specific category')
+    feed_group.add_argument('--fetch-feed', type=str, metavar='NAME', help='Fetch latest content for a single feed by name')
     feed_group.add_argument('--import-opml', type=str, metavar='FILE', help='Import feeds from OPML file')
     feed_group.add_argument(
         '--update-feedjs',
         action='store_true',
-        help='Update all feeds defined in feeds.json'
+        help='Update feeds configuration from feeds.json'
     )
     
     # Information display
@@ -149,14 +150,14 @@ Examples:
     if args.add_feeds:
         add_feeds(args.category, args.debug)
     
-    if args.update_category:
-        update_category(args.update_category, args.debug)
+    if args.fetch_category:
+        fetch_category_feeds(args.fetch_category, args.debug)
     
-    if args.update_feed:
-        update_single_feed(args.update_feed, args.debug)
+    if args.fetch_feed:
+        fetch_single_feed(args.fetch_feed, args.debug)
     
-    if args.update_all:
-        add_feeds(None, args.debug)  # Update all feeds
+    if args.fetch_all:
+        fetch_all_feeds(args.debug)
     
     if args.update_feedjs:
         update_feeds_from_json(args.debug)
@@ -166,8 +167,8 @@ Examples:
     
     # Start chat interface if requested or if no other action was specified
     if args.chat or not any([args.reset_db, args.add_feeds, args.list_categories, 
-                           args.list_feeds, args.update_all, args.update_category,
-                           args.update_feedjs, args.import_opml]):
+                           args.list_feeds, args.fetch_all, args.fetch_category,
+                           args.fetch_feed, args.update_feedjs, args.import_opml]):
         # Create chat instance
         chat = RSSChat(config=config, debug=args.debug)
         

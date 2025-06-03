@@ -89,13 +89,15 @@ Traditional RSS readers often lack intelligent search and content discovery feat
 - ⌨️ **Command Line Interface**
   - Basic Operations:
     - `--add-feeds`: Add example RSS feeds
-    - `--update-all`: Update all feeds
+    - `--fetch-all`: Fetch latest content for all feeds
     - `--chat`: Start chat interface (default if no arguments provided)
   - Feed Management:
     - `--category CATEGORY`: Add feeds from specific category
-    - `--update-category CATEGORY`: Update feeds in specific category
+    - `--fetch-category CATEGORY`: Fetch latest content for feeds in specific category
+    - `--fetch-feed NAME`: Fetch latest content for a specific feed
     - `--list-categories`: Show available categories
     - `--list-feeds`: Display all feeds
+    - `--update-feedjs`: Update feeds configuration from feeds.json
   - System:
     - `--reset-db`: Reset the database
     - `--debug`: Enable debug mode

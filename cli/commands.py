@@ -217,15 +217,15 @@ def add_feeds(category: str = None, debug: bool = False):
     console.print("\n[bold green]Feed addition completed![/bold green]")
     display_categories()
 
-def update_category(category: str, debug: bool = False):
-    """Update all feeds in a specific category"""
+def fetch_category_feeds(category: str, debug: bool = False):
+    """Fetch latest content for all feeds in a specific category"""
     if category not in get_available_categories():
         console.print(f"[bold red]Error:[/bold red] Category '{category}' not found.")
         console.print("Available categories:", ", ".join(get_available_categories()))
         return
     
     fetcher = RSSFetcher(debug=debug)
-    console.print(f"\n[bold cyan]Updating feeds in category:[/bold cyan] {category}")
+    console.print(f"\n[bold cyan]Fetching latest content for feeds in category:[/bold cyan] {category}")
     feeds_to_update = get_feeds_by_category(category)
     
     with Progress(
@@ -234,7 +234,7 @@ def update_category(category: str, debug: bool = False):
         console=console
     ) as progress:
         for feed in feeds_to_update:
-            task_id = progress.add_task(f"Updating: {feed.name}")
+            task_id = progress.add_task(f"Fetching: {feed.name}")
             try:
                 result = fetcher.fetch_feed(feed.url)
                 if result:
@@ -242,9 +242,9 @@ def update_category(category: str, debug: bool = False):
                         db_feed = db.merge(result)
                         console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
                 else:
-                    console.print(f"[bold red]Failed to update feed:[/bold red] {feed.name}")
+                    console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed.name}")
             except Exception as e:
-                console.print(f"[bold red]Error updating {feed.name}:[/bold red] {str(e)}")
+                console.print(f"[bold red]Error fetching {feed.name}:[/bold red] {str(e)}")
             finally:
                 progress.remove_task(task_id)
 
@@ -289,8 +289,8 @@ def import_opml(file_path: str, debug: bool = False):
     except Exception as e:
         console.print(f"[bold red]Error importing OPML:[/bold red] {str(e)}")
 
-def update_single_feed(feed_name: str, debug: bool = False):
-    """Update a specific feed by name"""
+def fetch_single_feed(feed_name: str, debug: bool = False):
+    """Fetch latest content for a specific feed by name"""
     fetcher = RSSFetcher(debug=debug)
     
     try:
@@ -299,7 +299,7 @@ def update_single_feed(feed_name: str, debug: bool = False):
             console.print(f"[bold red]Error:[/bold red] Feed '{feed_name}' not found.")
             return
         
-        console.print(f"\n[bold cyan]Updating feed:[/bold cyan] {feed_name}")
+        console.print(f"\n[bold cyan]Fetching latest content for feed:[/bold cyan] {feed_name}")
         
         with get_db_session() as db:
             result = fetcher.fetch_feed(feed_config.url)
@@ -307,7 +307,33 @@ def update_single_feed(feed_name: str, debug: bool = False):
                 db_feed = db.merge(result)
                 console.print(Panel(format_feed_info(db_feed), title=feed_name, border_style="green"))
             else:
-                console.print(f"[bold red]Failed to update feed:[/bold red] {feed_name}")
+                console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed_name}")
                 
     except Exception as e:
-        console.print(f"[bold red]Error updating {feed_name}:[/bold red] {str(e)}") 
+        console.print(f"[bold red]Error fetching {feed_name}:[/bold red] {str(e)}")
+
+def fetch_all_feeds(debug: bool = False):
+    """Fetch latest content for all feeds in the system"""
+    fetcher = RSSFetcher(debug=debug)
+    console.print("\n[bold cyan]Fetching latest content for all feeds[/bold cyan]")
+    feeds_to_update = get_all_feeds()
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        for feed in feeds_to_update:
+            task_id = progress.add_task(f"Fetching: {feed.name}")
+            try:
+                result = fetcher.fetch_feed(feed.url)
+                if result:
+                    with get_db_session() as db:
+                        db_feed = db.merge(result)
+                        console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
+                else:
+                    console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed.name}")
+            except Exception as e:
+                console.print(f"[bold red]Error fetching {feed.name}:[/bold red] {str(e)}")
+            finally:
+                progress.remove_task(task_id) 

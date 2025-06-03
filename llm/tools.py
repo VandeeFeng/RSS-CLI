@@ -339,12 +339,12 @@ def search_related_feeds(query: str) -> str:
             }
             return json.dumps(error_response)
 
-def fetch_and_update_feed(feed_name: str) -> str:
+def fetch_feed_content(feed_name: str) -> str:
     """
-    Fetch or update a specific RSS feed
+    Fetch latest content for a specific RSS feed
     
     Args:
-        feed_name: Name of the feed to fetch/update
+        feed_name: Name of the feed to fetch
         
     Returns:
         JSON string containing:
@@ -392,7 +392,7 @@ def fetch_and_update_feed(feed_name: str) -> str:
                 }
                 return json.dumps(response)
             except Exception as e:
-                logger.error(f"Error in fetch_and_update_feed: {str(e)}")
+                logger.error(f"Error in fetch_feed_content: {str(e)}")
                 error_response = {
                     "success": False,
                     "error": str(e),
@@ -401,7 +401,7 @@ def fetch_and_update_feed(feed_name: str) -> str:
                 return json.dumps(error_response)
             
     except Exception as e:
-        logger.error(f"Error in fetch_and_update_feed: {str(e)}")
+        logger.error(f"Error in fetch_feed_content: {str(e)}")
         error_response = {
             "success": False,
             "error": str(e),
@@ -525,7 +525,7 @@ search_related_feeds_tool = Tool(
 fetch_feed_tool = Tool(
     name="fetch_feed",
     description="""
-    Fetch or update an RSS feed by its name.
+    Fetch latest content for an RSS feed by its name.
     This tool will fetch new entries from the feed and store them in the database.
     
     Args:
@@ -537,7 +537,7 @@ fetch_feed_tool = Tool(
         - Last update time
         - Success/failure status
     """,
-    func=fetch_and_update_feed
+    func=fetch_feed_content
 )
 
 # New function and tool for crawling URL content
