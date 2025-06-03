@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from dateutil.parser import parse
 from dateutil.tz import tzlocal, tzutc
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from config import config
 from database.models import Feed as DBFeed, FeedEntry
 from database.db import SessionLocal

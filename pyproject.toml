@@ -1,0 +1,40 @@
+[project]
+name = "rss-cli"
+version = "0.1.0"
+description = "A modern CLI tool that combines RSS feed management with AI capabilities"
+authors = [
+    { name = "Vandee", email = "" }
+]
+dependencies = [
+    "feedparser>=6.0.10",
+    "sqlalchemy>=2.0.27",
+    "psycopg2-binary>=2.9.9",
+    "pgvector>=0.2.5",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.28.1",
+    "aiohttp>=3.12.6",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "fastapi-mcp>=0.3.4",
+    "langchain>=0.3.25",
+    "langchain-community>=0.3.24",
+    "langchain-core>=0.3.63",
+    "langchain-ollama>=0.3.3",
+    "langsmith>=0.3.44",
+    "python-dateutil>=2.8.2",
+    "rich>=14.0.0",
+    "crawl4ai>=0.6.3",
+    "typing-extensions>=4.13.2",
+    "pydantic>=2.11.5"
+]
+requires-python = ">=3.10"
+
+[project.scripts]
+rss = "main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["api", "cli", "database", "llm", "rss", "main.py", "config.py"] 

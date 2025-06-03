@@ -234,6 +234,21 @@ python main.py --add-feeds --category tech
 python main.py
 ```
 
+8. **Optional: Install Globally with UV**
+```bash
+# Install the package globally with UV for system-wide access
+uv tool install -e .
+
+# This will make the 'rss' command available globally
+# You can verify the installation by running:
+rss --help
+
+# To uninstall the global command:
+uv tool uninstall rss-cli
+```
+
+This global installation allows you to run the `rss` command from any directory.
+
 ## Usage Guide
 
 ### Function Calling System

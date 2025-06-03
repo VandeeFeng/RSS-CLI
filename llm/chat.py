@@ -4,7 +4,7 @@ from typing import List, Optional, Iterator
 from contextlib import contextmanager
 
 from langchain.agents import Tool, AgentExecutor, create_react_agent
-from langchain_community.llms import Ollama
+from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.schema import AgentAction, AgentFinish, AIMessage, HumanMessage
@@ -76,7 +76,7 @@ class RSSChat:
         logger.setLevel(log_level)
         
         # Initialize LLM
-        self.llm = Ollama(
+        self.llm = OllamaLLM(
             base_url=config.ollama.base_url,
             model=config.ollama.chat_model,
             callbacks=[self.callback_handler]

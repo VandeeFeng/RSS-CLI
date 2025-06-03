@@ -19,6 +19,7 @@ def _load_feeds():
     """Load feeds from file"""
     global FEED_CATEGORIES
     try:
+        # Try loading from the configured path first
         if os.path.exists(config.rss.feeds_file):
             with open(config.rss.feeds_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -26,20 +27,36 @@ def _load_feeds():
                     category: [Feed(**feed) for feed in feeds]
                     for category, feeds in data.items()
                 }
-        else:
-            from rich.console import Console
-            console = Console()
-            console.print("[yellow]No feeds file found![/yellow]")
-            console.print(f"[yellow]Expected location: {config.rss.feeds_file}[/yellow]")
-            console.print("[green]You can add feeds using:[/green]")
-            console.print("  python main.py --add-feeds")
-            FEED_CATEGORIES = {}
+                return
+        
+        # If not found, try looking in the package directory
+        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        package_feeds = os.path.join(package_dir, 'feeds.json')
+        if os.path.exists(package_feeds):
+            with open(package_feeds, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                FEED_CATEGORIES = {
+                    category: [Feed(**feed) for feed in feeds]
+                    for category, feeds in data.items()
+                }
+                return
+        
+        # If still not found, show error message
+        from rich.console import Console
+        console = Console()
+        console.print("[yellow]No feeds file found![/yellow]")
+        console.print(f"[yellow]Expected locations:[/yellow]")
+        console.print(f"  - {config.rss.feeds_file}")
+        console.print(f"  - {package_feeds}")
+        console.print("[green]You can add feeds using:[/green]")
+        console.print("  rss add-feed")
+        FEED_CATEGORIES = {}
     except Exception as e:
         from rich.console import Console
         console = Console()
         console.print(f"[red]Error loading feeds file: {str(e)}[/red]")
         console.print("[green]You can add feeds using:[/green]")
-        console.print("  python main.py --add-feeds")
+        console.print("  rss add-feed")
         FEED_CATEGORIES = {}
 
 def _save_feeds():

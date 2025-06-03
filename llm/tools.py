@@ -3,7 +3,7 @@ from rss.feeds import get_feeds_by_category, get_available_categories, get_feed_
 from database.db import SessionLocal
 from database.models import Feed as DBFeed, FeedEntry
 from datetime import datetime, timedelta
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from config import config
 from rss.rss_fetcher import RSSFetcher
 from contextlib import contextmanager
