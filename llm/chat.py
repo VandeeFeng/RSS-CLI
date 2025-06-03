@@ -11,7 +11,13 @@ from langchain.schema import AgentAction, AgentFinish, AIMessage, HumanMessage
 from rich.console import Console
 
 from config import Config
-from .tools import get_feed_details_tool, get_category_feeds_tool, fetch_feed_tool, search_related_feeds_tool, crawl_url_tool
+from .tools import (
+    get_feed_details_tool,
+    get_category_feeds_tool,
+    fetch_feed_tool,
+    search_related_feeds_tool,
+    crawl_url_tool
+)
 from database.db import SessionLocal
 
 logger = logging.getLogger('rss_ai')
@@ -85,10 +91,10 @@ class RSSChat:
         
         # Define tools
         self.tools: List[Tool] = [
-            get_category_feeds_tool,
             get_feed_details_tool,
-            search_related_feeds_tool,
+            get_category_feeds_tool,
             fetch_feed_tool,
+            search_related_feeds_tool,
             crawl_url_tool
         ]
         

@@ -228,105 +228,96 @@ def get_feed_details(feed_name: str) -> str:
             }
             return json.dumps(error_response)
 
-def search_related_feeds(query: str) -> str:
+def search_related_feeds(query: str, limit: int = 5) -> str:
     """
-    Search for feeds related to the given query using semantic search
+    Search for feeds and entries related to the given query using semantic search
     
     Args:
         query: Search query (e.g., "AI news", "programming tutorials")
+        limit: Maximum number of results to return
     
     Returns:
         JSON string containing:
         - success: bool indicating if the operation was successful
         - error: error message if any
         - feeds: list of related feeds with their recent entries
+        - entries: list of directly related entries
         - query: original search query
     """
     with get_db_session() as db:
         try:
-            all_feeds = get_all_feeds()
+            # First try to find directly related entries using HNSW index
+            fetcher = RSSFetcher()
+            similar_entries = fetcher.search_similar_entries(query, limit=limit*2)  # Get more entries to aggregate feeds
             
-            # Create search context for each feed
-            feed_contexts = []
-            for feed_config in all_feeds:
-                db_feed = db.query(DBFeed).filter(DBFeed.url == feed_config.url).first()
-                if not db_feed:
-                    continue
-                    
-                # Get recent entries for context
-                recent_entries = (
-                    db.query(FeedEntry)
-                    .filter(FeedEntry.feed_id == db_feed.id)
-                    .order_by(FeedEntry.published_date.desc())
-                    .limit(5)
-                    .all()
-                )
-                
-                # Create context from feed metadata and recent entries
-                context = f"{db_feed.title}\n{db_feed.description}\n"
-                for entry in recent_entries:
-                    context += f"{entry.title}\n{entry.content[:200]}\n"
-                
-                feed_contexts.append({
-                    "feed": feed_config,
-                    "db_feed": db_feed,
-                    "context": context
-                })
+            # Group entries by feed and calculate feed relevance
+            feed_scores = {}
+            entries_by_feed = {}
             
-            # Get embeddings for the query and all feed contexts
-            query_embedding = embeddings_model.embed_query(query)
+            for entry in similar_entries:
+                feed_id = entry.feed_id
+                if feed_id not in feed_scores:
+                    feed_scores[feed_id] = 0
+                    entries_by_feed[feed_id] = []
+                feed_scores[feed_id] += 1  # Each matching entry increases feed relevance
+                entries_by_feed[feed_id].append(entry)
             
-            # Calculate similarity scores
-            results = []
-            for feed_context in feed_contexts:
-                context_embedding = embeddings_model.embed_query(feed_context["context"])
-                similarity = sum(q * c for q, c in zip(query_embedding, context_embedding))
-                results.append({
-                    "feed": feed_context["feed"],
-                    "db_feed": feed_context["db_feed"],
-                    "similarity": similarity
-                })
-            
-            # Sort by similarity score
-            results.sort(key=lambda x: x["similarity"], reverse=True)
-            
-            # Format results
+            # Get feed information
             feeds_info = []
-            for result in results[:5]:  # Top 5 most relevant feeds
-                db_feed = result["db_feed"]
+            entries_info = []
+            seen_entries = set()
+            
+            # Sort feeds by relevance score
+            for feed_id, score in sorted(feed_scores.items(), key=lambda x: x[1], reverse=True)[:limit]:
+                feed = db.query(DBFeed).filter(DBFeed.id == feed_id).first()
+                if not feed:
+                    continue
                 
-                # Get recent entries
-                recent_entries = (
-                    db.query(FeedEntry)
-                    .filter(FeedEntry.feed_id == db_feed.id)
-                    .order_by(FeedEntry.published_date.desc())
-                    .limit(3)
-                    .all()
-                )
+                # Get recent entries for this feed
+                feed_entries = entries_by_feed[feed_id]
                 
+                # Format feed info
                 feeds_info.append({
-                    "name": result["feed"].name,
-                    "url": result["feed"].url,
-                    "title": db_feed.title,
-                    "description": db_feed.description,
-                    "relevance_score": round(result["similarity"], 3),
-                    "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None,
-                    "recent_entries": [
+                    "name": feed.title,
+                    "url": feed.url,
+                    "title": feed.title,
+                    "description": feed.description,
+                    "relevance_score": round(score / len(similar_entries), 3),
+                    "last_updated": feed.last_updated.isoformat() if feed.last_updated else None,
+                    "matching_entries": [
                         {
                             "title": entry.title,
                             "link": entry.link,
                             "published": entry.published_date.isoformat() if entry.published_date else None,
                             "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content
                         }
-                        for entry in recent_entries
+                        for entry in feed_entries[:3]  # Top 3 entries per feed
                     ]
                 })
+                
+                # Add entries to the separate entries list
+                for entry in feed_entries:
+                    if entry.id not in seen_entries and len(entries_info) < limit:
+                        entries_info.append({
+                            "title": entry.title,
+                            "link": entry.link,
+                            "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content,
+                            "published": entry.published_date.isoformat() if entry.published_date else None,
+                            "feed": {
+                                "id": feed.id,
+                                "title": feed.title,
+                                "url": feed.url
+                            }
+                        })
+                        seen_entries.add(entry.id)
             
             response = {
                 "success": True,
                 "query": query,
                 "feeds_found": len(feeds_info),
-                "feeds": feeds_info
+                "feeds": feeds_info,
+                "entries_found": len(entries_info),
+                "entries": entries_info
             }
             return json.dumps(response)
             
@@ -335,7 +326,8 @@ def search_related_feeds(query: str) -> str:
                 "success": False,
                 "error": str(e),
                 "query": query,
-                "feeds": []
+                "feeds": [],
+                "entries": []
             }
             return json.dumps(error_response)
 
@@ -506,18 +498,20 @@ get_feed_details_tool = Tool(
 search_related_feeds_tool = Tool(
     name="search_related_feeds",
     description="""
-    Search for RSS feeds related to a given topic or query using semantic search.
-    This tool helps find feeds that are semantically related to the user's interests.
+    Search for feeds and entries related to a given topic or query using semantic search.
+    This tool uses HNSW index for efficient vector similarity search.
     
     Args:
         query (str): Search query describing the topic of interest (e.g., "AI research", "tech news")
+        limit (int, optional): Maximum number of results to return (default: 5)
         
     Returns:
-        Information about related feeds, including:
-        - Feed metadata and relevance scores
-        - Recent entries from each feed
+        Information about related content, including:
+        - Related feeds sorted by relevance
+        - Matching entries from these feeds
         - Content previews and links
-        Feeds are sorted by relevance to the query.
+        - Publication dates
+        Results are sorted by semantic similarity to the query.
     """,
     func=search_related_feeds
 )
