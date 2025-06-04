@@ -141,6 +141,8 @@ def get_feed_by_name(name: str) -> Feed:
     """Get feed by name"""
     if not FEED_CATEGORIES:
         _load_feeds()
+    # Strip any quotes from the name
+    name = name.strip().strip('"\'')
     for feed in get_all_feeds():
         if feed.name == name:
             return feed

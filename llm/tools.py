@@ -3,6 +3,8 @@ from rss.feeds import get_feeds_by_category, get_available_categories, get_feed_
 from database.db import SessionLocal
 from database.models import Feed as DBFeed, FeedEntry
 from datetime import datetime, timedelta
+from dateutil.parser import parse
+from dateutil.tz import tzutc
 from langchain_ollama import OllamaEmbeddings
 from config import config
 from rss.rss_fetcher import RSSFetcher
@@ -158,7 +160,7 @@ def get_feed_details(feed_name: str) -> str:
             )
             
             # Group entries by time period
-            now = datetime.now()
+            now = datetime.now(tzutc())  # Use UTC timezone
             entries_by_period = {
                 "last_24h": [],
                 "last_week": [],

@@ -15,6 +15,20 @@ from . import FEED_CATEGORIES, _load_feeds
 
 logger = logging.getLogger('rss_ai')
 
+# Define timezone info for common timezones
+TZINFOS = {
+    'EST': -18000,  # UTC-5 hours in seconds
+    'EDT': -14400,  # UTC-4 hours in seconds
+    'CST': -21600,  # UTC-6 hours
+    'CDT': -18000,  # UTC-5 hours
+    'MST': -25200,  # UTC-7 hours
+    'MDT': -21600,  # UTC-6 hours
+    'PST': -28800,  # UTC-8 hours
+    'PDT': -25200,  # UTC-7 hours
+    'GMT': 0,       # UTC
+    'UTC': 0,
+}
+
 @contextmanager
 def get_db_session():
     """Create a new database session."""
@@ -39,6 +53,9 @@ class RSSFetcher:
         # Set custom limits if provided
         self.max_entries = max_entries if max_entries is not None else config.rss.max_entries_per_feed
         self.max_age_hours = max_age_hours if max_age_hours is not None else config.rss.max_age_hours
+        
+        if debug:
+            logger.debug(f"Initialized RSSFetcher with max_entries={self.max_entries}, max_age_hours={self.max_age_hours}")
     
     def fetch_feed(self, url: str) -> Optional[DBFeed]:
         try:
@@ -124,7 +141,7 @@ class RSSFetcher:
                         # Stop if we've reached the maximum number of entries
                         if entries_added >= self.max_entries:
                             if self.debug:
-                                logger.debug(f"Reached maximum entries limit ({self.max_entries})")
+                                logger.debug(f"Reached maximum entries limit ({self.max_entries}), stopping")
                             break
                             
                         try:
@@ -132,11 +149,12 @@ class RSSFetcher:
                             published = entry.get('published')
                             if published:
                                 try:
-                                    published_date = parse(published)
+                                    published_date = parse(published, tzinfos=TZINFOS)
                                     # Ensure timezone awareness
                                     if published_date.tzinfo is None:
                                         published_date = published_date.replace(tzinfo=tzutc())
-                                except:
+                                except Exception as e:
+                                    logger.warning(f"Error parsing date '{published}': {str(e)}")
                                     published_date = current_time
                             else:
                                 published_date = current_time
