@@ -80,8 +80,8 @@ class RSSFetcher:
                     if existing_feed:
                         if self.debug:
                             logger.debug(f"Feed already exists: {url}")
-                        # Update the feed title, description and last_updated
-                        existing_feed.title = feed_data.feed.get('title', '')  # RSS feed title
+                        # Update the feed name, description and last_updated
+                        existing_feed.name = feed_data.feed.get('title', '')  # RSS feed title as name
                         existing_feed.description = description
                         existing_feed.last_updated = current_time
                         # Get category from feeds.json
@@ -101,7 +101,7 @@ class RSSFetcher:
                                       if any(f.url == url for f in feeds)), None)
                         feed = DBFeed(
                             url=url,
-                            title=feed_data.feed.get('title', ''),  # RSS feed title
+                            name=feed_data.feed.get('title', ''),  # RSS feed title as name
                             description=description,
                             last_updated=current_time,
                             category=category

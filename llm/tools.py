@@ -278,9 +278,8 @@ def search_related_feeds(query: str, limit: int = 5) -> str:
                 
                 # Format feed info
                 feeds_info.append({
-                    "name": feed.title,
+                    "name": feed.name,
                     "url": feed.url,
-                    "title": feed.title,
                     "description": feed.description,
                     "relevance_score": round(score / len(similar_entries), 3),
                     "last_updated": feed.last_updated.isoformat() if feed.last_updated else None,
@@ -305,7 +304,7 @@ def search_related_feeds(query: str, limit: int = 5) -> str:
                             "published": entry.published_date.isoformat() if entry.published_date else None,
                             "feed": {
                                 "id": feed.id,
-                                "title": feed.title,
+                                "title": feed.name,
                                 "url": feed.url
                             }
                         })
@@ -725,7 +724,7 @@ def get_feed_summary(feed_id: int) -> str:
                 })
             
             # Reuse get_feed_details logic
-            feed_details = json.loads(get_feed_details(db_feed.title))
+            feed_details = json.loads(get_feed_details(db_feed.name))
             if not feed_details["success"]:
                 return json.dumps(feed_details)
             
@@ -734,7 +733,7 @@ def get_feed_summary(feed_id: int) -> str:
                 "success": True,
                 "feed": {
                     "id": feed_id,
-                    "title": db_feed.title,
+                    "title": db_feed.name,
                     "url": db_feed.url,
                     "description": db_feed.description,
                     "last_updated": db_feed.last_updated.isoformat() if db_feed.last_updated else None

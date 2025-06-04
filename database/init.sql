@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS feeds (
     id SERIAL PRIMARY KEY,
     url VARCHAR NOT NULL UNIQUE,
     name VARCHAR,
-    title VARCHAR,
     description TEXT,
     last_updated TIMESTAMP WITH TIME ZONE,
     category VARCHAR

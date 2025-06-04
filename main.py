@@ -36,11 +36,11 @@ def format_feed_info(feed, entries=None):
     """Format feed information for display"""
     # Handle both Feed and DBFeed objects
     if isinstance(feed, Feed):
-        title = feed.name
+        title = feed.name or "Untitled Feed"
         url = feed.url
         last_updated = None
     else:
-        title = feed.title or feed.name
+        title = feed.title or feed.name or "Untitled Feed"
         url = feed.url
         last_updated = feed.last_updated
     

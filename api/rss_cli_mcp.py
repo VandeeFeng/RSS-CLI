@@ -57,7 +57,7 @@ async def list_feeds(db: Session = Depends(get_db)):
         feeds = db.query(Feed).all()
         return [FeedResponse(
             id=f.id,
-            title=(f.title or f.name or "Untitled Feed"),
+            title=(f.name or "Untitled Feed"),
             url=f.url,
             last_updated=f.last_updated
         ) for f in feeds]
@@ -91,7 +91,7 @@ async def update_feed(feed_id: int, db: Session = Depends(get_db)):
         if updated_feed:
             db.merge(updated_feed)
             db.commit()
-            return {"message": f"Feed '{feed.title}' updated successfully"}
+            return {"message": f"Feed '{feed.name}' updated successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to fetch feed")
     except Exception as e:
@@ -119,9 +119,9 @@ async def search_feeds(query: SearchQuery, db: Session = Depends(get_db)):
     """Search for RSS feeds by title or URL"""
     try:
         results = [
-            {"id": f.id, "title": f.title or f.name, "url": f.url}
+            {"id": f.id, "title": f.name, "url": f.url}
             for f in db.query(Feed).filter(
-                (Feed.title.ilike(f"%{query.query}%")) | 
+                (Feed.name.ilike(f"%{query.query}%")) | 
                 (Feed.url.ilike(f"%{query.query}%"))
             ).all()
         ]
@@ -144,7 +144,7 @@ async def get_feed_summary(feed_id: int, db: Session = Depends(get_db)):
         return {
             "feed": {
                 "id": feed.id,
-                "title": feed.title or feed.name,
+                "title": feed.name,
                 "url": feed.url,
                 "last_updated": feed.last_updated
             },
