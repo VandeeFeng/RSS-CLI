@@ -58,6 +58,10 @@ class RSSFetcher:
             logger.debug(f"Initialized RSSFetcher with max_entries={self.max_entries}, max_age_hours={self.max_age_hours}")
     
     def fetch_feed(self, url: str) -> Optional[DBFeed]:
+        # Reset counters at the start of each fetch
+        self.entries_added = 0
+        self.entries_skipped = 0
+        
         try:
             # First try to fetch the raw content with requests
             response = requests.get(url, timeout=10)
@@ -126,8 +130,6 @@ class RSSFetcher:
                         db.add(feed)
                         db.flush()
 
-                    entries_added = 0
-                    entries_skipped = 0
                     cutoff_time = current_time - timedelta(hours=self.max_age_hours)
                     
                     if self.debug:
@@ -139,7 +141,7 @@ class RSSFetcher:
                     # Process entries in order (feedparser usually returns newest first)
                     for entry in feed_data.entries:
                         # Stop if we've reached the maximum number of entries
-                        if entries_added >= self.max_entries:
+                        if self.entries_added >= self.max_entries:
                             if self.debug:
                                 logger.debug(f"Reached maximum entries limit ({self.max_entries}), stopping")
                             break
@@ -163,7 +165,7 @@ class RSSFetcher:
                             if published_date < cutoff_time:
                                 if self.debug:
                                     logger.debug(f"Skipping entry: older than {self.max_age_hours} hours")
-                                entries_skipped += 1
+                                self.entries_skipped += 1
                                 continue
                             
                             content = entry.get('content', [{}])[0].get('value', '') or entry.get('description', '')
@@ -173,7 +175,7 @@ class RSSFetcher:
                             if not title or not content or not link:
                                 if self.debug:
                                     logger.debug(f"Skipping entry: missing title, content, or link")
-                                entries_skipped += 1
+                                self.entries_skipped += 1
                                 continue
                             
                             # Check if entry already exists
@@ -185,14 +187,14 @@ class RSSFetcher:
                             if existing_entry:
                                 if self.debug:
                                     logger.debug(f"Skipping duplicate entry: {title}")
-                                entries_skipped += 1
+                                self.entries_skipped += 1
                                 continue
                                     
                             try:
                                 embedding = self.embeddings.embed_query(f"{title} {content}")
                             except Exception as e:
                                 logger.error(f"Error generating embedding for entry {title}: {str(e)}")
-                                entries_skipped += 1
+                                self.entries_skipped += 1
                                 continue
                             
                             feed_entry = FeedEntry(
@@ -205,20 +207,20 @@ class RSSFetcher:
                             )
                             
                             db.add(feed_entry)
-                            entries_added += 1
+                            self.entries_added += 1
                             
                             if self.debug:
                                 logger.debug(f"Added entry: {title}")
                                 
                         except Exception as e:
                             logger.error(f"Error processing entry: {str(e)}")
-                            entries_skipped += 1
+                            self.entries_skipped += 1
                             continue
                     
                     db.commit()
                     
                     if self.debug:
-                        logger.debug(f"Added {entries_added} entries, skipped {entries_skipped} entries")
+                        logger.debug(f"Added {self.entries_added} entries, skipped {self.entries_skipped} entries")
                     
                     return feed
                     

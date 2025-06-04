@@ -23,7 +23,7 @@ def get_db_session():
     finally:
         db.close()
 
-def format_feed_info(feed, entries=None):
+def format_feed_info(feed, entries=None, entries_added=None, entries_skipped=None):
     """Format feed information for display"""
     # Handle both Feed and DBFeed objects
     if isinstance(feed, Feed):
@@ -43,6 +43,12 @@ def format_feed_info(feed, entries=None):
         f"[bold magenta]Description:[/bold magenta] {description}",
         f"[bold green]Last Updated:[/bold green] {last_updated.strftime('%Y-%m-%d %H:%M:%S') if last_updated else 'Never'}"
     ]
+
+    # Add entries stats if provided
+    if entries_added is not None:
+        info.append(f"[bold yellow]Entries Added:[/bold yellow] {entries_added}")
+    if entries_skipped is not None:
+        info.append(f"[bold yellow]Entries Skipped:[/bold yellow] {entries_skipped}")
     
     if entries:
         info.append(f"\n[bold yellow]Latest entries[/bold yellow] ({len(entries)}):")
@@ -271,7 +277,11 @@ def fetch_category_feeds(category: str, debug: bool = False):
                 if result:
                     with get_db_session() as db:
                         db_feed = db.merge(result)
-                        console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
+                        console.print(Panel(format_feed_info(
+                            db_feed,
+                            entries_added=fetcher.entries_added,
+                            entries_skipped=fetcher.entries_skipped
+                        ), title=feed.name, border_style="green"))
                 else:
                     console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed.name}")
             except Exception as e:
@@ -340,7 +350,11 @@ def fetch_single_feed(feed_name: str, debug: bool = False):
             result = fetcher.fetch_feed(feed_config.url)
             if result:
                 db_feed = db.merge(result)
-                console.print(Panel(format_feed_info(db_feed), title=feed_name, border_style="green"))
+                console.print(Panel(format_feed_info(
+                    db_feed,
+                    entries_added=fetcher.entries_added,
+                    entries_skipped=fetcher.entries_skipped
+                ), title=feed_name, border_style="green"))
             else:
                 console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed_name}")
                 
@@ -369,7 +383,10 @@ def fetch_all_feeds(debug: bool = False):
                 if result:
                     with get_db_session() as db:
                         db_feed = db.merge(result)
-                        console.print(Panel(format_feed_info(db_feed), title=feed.name, border_style="green"))
+                        # Get the entries_added and entries_skipped from the fetcher
+                        entries_added = getattr(fetcher, 'entries_added', 0)
+                        entries_skipped = getattr(fetcher, 'entries_skipped', 0)
+                        console.print(Panel(format_feed_info(db_feed, entries_added=entries_added, entries_skipped=entries_skipped), title=feed.name, border_style="green"))
                 else:
                     console.print(f"[bold red]Failed to fetch feed:[/bold red] {feed.name}")
             except Exception as e:
