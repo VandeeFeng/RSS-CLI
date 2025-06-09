@@ -1,5 +1,6 @@
 import logging
 import json
+import time  
 from typing import List, Optional, Iterator
 from contextlib import contextmanager
 
@@ -28,23 +29,24 @@ You have access to the following tools:
 
 {tools}
 
-Always provide clear and concise responses, focusing on the most relevant information.
-If you find feeds or articles, include their titles and links when appropriate.
-When a user wants to see the latest content, make sure to fetch/update the feed first.
-
-Important: When using tools, provide the input as a simple string, not a JSON object.
-Example: To fetch Hacker News feed, just use the feed name as a string.
+Important Guidelines:
+1. Provide clear and concise responses
+2. If you can't complete a task in 2-3 steps, ask for user clarification
+3. When you have a satisfactory answer, STOP and return it
+4. Don't keep trying different tools if you're not making progress
+5. If a tool returns an error, ask for user clarification instead of trying other tools blindly
+6. If you're not making progress or not sure about the answer, ask for user clarification
+7. When you get the content after using the crawl_url tool, summarize the main points in a few sentences,and provide the link to the original content.
 
 Use the following format:
-
 Question: {input}
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
+Thought: (consider if you have enough information and if the task is achievable)
+Action: (if needed, one of [{tool_names}])
+Action Input: (your input to the tool)
+Observation: (tool result)
+... (only continue if necessary and you're making progress)
+Thought: (decide if you have a satisfactory answer or need user input)
+Final Answer: (your response to the user's question)
 
 Begin!
 
@@ -76,6 +78,8 @@ class RSSChat:
         self.debug = debug
         self.console = Console()
         self.callback_handler = StreamingCallbackHandler(self.console)
+        self.waiting_for_user_input = False
+        self.timeout = 30  # 30 seconds timeout
         
         # Configure logging based on debug mode
         log_level = logging.DEBUG if debug else logging.INFO
@@ -111,7 +115,7 @@ class RSSChat:
             agent=self.agent,
             tools=self.tools,
             handle_parsing_errors=True,
-            max_iterations=5,
+            max_iterations=5,  
             verbose=True,
             callbacks=[self.callback_handler]
         )
@@ -128,43 +132,63 @@ class RSSChat:
             return f"\nThought: {action}\n"
     
     def format_observation(self, observation_str: str) -> str:
-        """Format an observation string (expected to be JSON) for display."""
+        """Format an observation string with better error handling."""
         try:
             observation = json.loads(observation_str)
             if isinstance(observation, dict):
-                # Ensure all string representations are handled correctly
                 if observation.get("success") is False:
-                    return f"Error: {str(observation.get('error', 'Unknown error'))}"
+                    self.waiting_for_user_input = True
+                    error_msg = str(observation.get('error', 'Unknown error'))
+                    return f"Error: {error_msg}. Please provide more information or try a different approach."
                 elif "feed" in observation:
                     feed = observation["feed"]
                     title = str(feed.get('title', 'Untitled'))
                     last_updated = str(feed.get('last_updated', 'Unknown'))
                     description = str(feed.get('description', 'No description'))
                     return f"Feed: {title}\\nLast Updated: {last_updated}\\nDescription: {description}"
-                return str(observation) # Fallback for other dicts
-            return observation_str # If not a dict after parsing, return original string
+                return str(observation)
+            return observation_str
         except json.JSONDecodeError:
-            return observation_str # If not valid JSON, return original string
+            self.waiting_for_user_input = True
+            return "Error: Unable to parse tool response. Please try again with different parameters."
     
     def chat_stream(self, message: str) -> Iterator[str]:
-        """Process a chat message using the agent with streaming output."""
+        """Process a chat message using the agent with streaming output and timeout."""
         try:
             with get_db_session() as db:
                 current_input = str(message)
                 agent_inputs = {"input": current_input}
                 final_answer_sent = False
+                start_time = time.time()
+                self.waiting_for_user_input = False
                 
                 for chunk in self.agent_executor.stream(agent_inputs):
+                    # Check for timeout
+                    if time.time() - start_time > self.timeout:
+                        yield "\nOperation timed out. Please try again with a more specific request."
+                        break
+                        
+                    # Check if waiting for user input
+                    if self.waiting_for_user_input and not final_answer_sent:
+                        yield "\nNeed more information. Please provide additional details or try a different approach."
+                        break
+                        
                     if isinstance(chunk, (AIMessage, HumanMessage)):
-                        if not final_answer_sent:  # Only yield if final answer hasn't been sent
+                        if not final_answer_sent:
                             yield str(chunk.content)
                     elif isinstance(chunk, dict):
                         if "intermediate_steps" in chunk:
                             for step in chunk["intermediate_steps"]:
                                 action, observation_obj = step
-                                if not final_answer_sent:  # Only yield if final answer hasn't been sent
+                                if not final_answer_sent:
                                     yield f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}\\n"
-                                    yield f"Observation: {self.format_observation(str(observation_obj))}\\n"
+                                    formatted_observation = self.format_observation(str(observation_obj))
+                                    yield f"Observation: {formatted_observation}\\n"
+                                    
+                                    # Check if we need to stop for user input after each step
+                                    if self.waiting_for_user_input:
+                                        break
+                                        
                         if "output" in chunk and not final_answer_sent:
                             yield f"Final Answer: {str(chunk['output'])}".strip()
                             final_answer_sent = True
@@ -176,7 +200,7 @@ class RSSChat:
             if self.debug:
                 yield f"\nError: {str(e)}\n"
             else:
-                yield "\nSorry, I encountered an error processing your request. Please try again.\n"
+                yield "\nSorry, I encountered an error processing your request. Please try again with a different approach.\n"
         
     def chat(self, message: str) -> Optional[str]:
         """Process a chat message using the agent (non-streaming)."""
