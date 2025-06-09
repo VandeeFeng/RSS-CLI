@@ -345,6 +345,8 @@ def fetch_single_feed(feed_name: str, debug: bool = False):
             return
         
         console.print(f"\n[bold cyan]Fetching latest content for feed:[/bold cyan] {feed_name}")
+        console.print(f"[dim]Max age: {config.rss.max_age_hours} hours[/dim]")
+        console.print(f"[dim]Max entries: {config.rss.max_entries_per_feed}[/dim]")
         
         with get_db_session() as db:
             result = fetcher.fetch_feed(feed_config.url)

@@ -148,23 +148,29 @@ class RSSFetcher:
                             
                         try:
                             # Parse published date first to check time limit
-                            published = entry.get('published')
+                            published = entry.get('published', entry.get('updated', entry.get('created')))
                             if published:
                                 try:
+                                    # First try to parse with timezone info
                                     published_date = parse(published, tzinfos=TZINFOS)
-                                    # Ensure timezone awareness
+                                    # If no timezone info was found, assume UTC
                                     if published_date.tzinfo is None:
                                         published_date = published_date.replace(tzinfo=tzutc())
+                                    # Convert to UTC for consistent comparison
+                                    published_date = published_date.astimezone(tzutc())
                                 except Exception as e:
-                                    logger.warning(f"Error parsing date '{published}': {str(e)}")
+                                    if self.debug:
+                                        logger.warning(f"Error parsing date '{published}': {str(e)}")
                                     published_date = current_time
                             else:
+                                if self.debug:
+                                    logger.debug("No published date found, using current time")
                                 published_date = current_time
                             
                             # Skip entries older than cutoff time
                             if published_date < cutoff_time:
                                 if self.debug:
-                                    logger.debug(f"Skipping entry: older than {self.max_age_hours} hours")
+                                    logger.debug(f"Skipping entry: older than {self.max_age_hours} hours (published: {published_date}, cutoff: {cutoff_time})")
                                 self.entries_skipped += 1
                                 continue
                             
@@ -210,7 +216,7 @@ class RSSFetcher:
                             self.entries_added += 1
                             
                             if self.debug:
-                                logger.debug(f"Added entry: {title}")
+                                logger.debug(f"Added entry: {title} (published: {published_date})")
                                 
                         except Exception as e:
                             logger.error(f"Error processing entry: {str(e)}")
