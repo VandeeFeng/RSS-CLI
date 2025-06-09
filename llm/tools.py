@@ -549,23 +549,69 @@ async def crawl_url_content_async(url: str) -> str:
         - error: error message if any
         - url: the crawled URL
         - content: the crawled content (Markdown format)
+        - summary: a brief summary of the content
+        - next_steps: suggested next steps for processing this content
     """
     try:
         async with AsyncWebCrawler() as crawler:
             result = await crawler.arun(url=url, config=None)
         
             if result and result.markdown:
+                content = result.markdown
+                
+                # Extract meaningful summary
+                # First try to get the first paragraph that's not too short
+                paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+                summary = ""
+                
+                # Look for a good first paragraph (at least 50 chars but not too long)
+                for para in paragraphs:
+                    if len(para) >= 50 and len(para) <= 300:
+                        summary = para
+                        break
+                
+                # If no good paragraph found, use smart truncation
+                if not summary:
+                    # Take first paragraph but ensure we don't cut mid-sentence
+                    first_para = paragraphs[0] if paragraphs else content
+                    if len(first_para) > 300:
+                        # Find the last complete sentence within 300 chars
+                        truncated = first_para[:300]
+                        last_period = max(
+                            truncated.rfind('.'),
+                            truncated.rfind('!'),
+                            truncated.rfind('?')
+                        )
+                        if last_period > 50:  # Ensure we have a decent length
+                            summary = first_para[:last_period + 1]
+                        else:
+                            # If no good sentence break, use the first 300 chars
+                            summary = truncated + "..."
+                    else:
+                        summary = first_para
+                
+                # Add content length info to summary
+                summary = f"{summary}\n\nArticle length: {len(content)} characters."
+                
                 response = {
                     "success": True,
                     "url": url,
-                    "content": result.markdown
+                    "content": content,  # Keep the full content
+                    "summary": summary,
+                    "next_steps": [
+                        "Review the summary for relevance",
+                        "Use process_long_content tool if you need to focus on specific parts",
+                        "Extract key information based on the user's query"
+                    ]
                 }
             else:
                 response = {
                     "success": False,
                     "error": "Failed to crawl content or content is empty.",
                     "url": url,
-                    "content": None
+                    "content": None,
+                    "summary": None,
+                    "next_steps": ["Try an alternative URL", "Report the crawling failure"]
                 }
             return json.dumps(response)
         
@@ -575,7 +621,9 @@ async def crawl_url_content_async(url: str) -> str:
             "success": False,
             "error": str(e),
             "url": url,
-            "content": None
+            "content": None,
+            "summary": None,
+            "next_steps": ["Handle the error", "Try an alternative URL"]
         }
         return json.dumps(error_response)
 
@@ -584,14 +632,14 @@ def crawl_url_content(url: str) -> str:
     try:
         return asyncio.run(crawl_url_content_async(url))
     except Exception as e:
-        # Log the exception or handle it as needed
         logger.error(f"Error running async crawl_url_content for {url}: {str(e)}")
-        # Potentially re-raise or return an error JSON if asyncio.run itself fails
         error_response = {
             "success": False,
             "error": f"Asyncio execution error: {str(e)}",
             "url": url,
-            "content": None
+            "content": None,
+            "summary": None,
+            "next_steps": ["Handle the error", "Try an alternative URL"]
         }
         return json.dumps(error_response)
 
@@ -601,15 +649,125 @@ crawl_url_tool = Tool(
     Crawl the main content of a web page given its URL.
     This tool uses Crawl4ai to extract the article or main content from a URL and returns it in Markdown format.
     
+    IMPORTANT: Input should be a direct URL string, NOT a JSON object.
+    Example: "https://example.com/article" (correct)
+    NOT: {"url": "https://example.com/article"} (wrong)
+    
+    The response includes:
+    - The main content
+    - A brief summary
+    - Suggested next steps for processing
+    - The original URL for reference
+    
+    After getting the content, you should:
+    1. Summarize the main points in a few sentences
+    2. Extract relevant information based on the user's query
+    3. Always provide the source URL
+    
     Args:
-        url (str): The URL of the web page to crawl.
+        url (str): The direct URL string of the web page to crawl.
         
     Returns:
-        The main content of the web page in Markdown format.
-        Includes success status and error messages if any.
+        A JSON string containing the content, summary, and next steps.
     """,
     func=crawl_url_content
 )
+
+def process_long_content(content: str, query: str = None, max_length: int = 1000) -> str:
+    """
+    Process long content and extract relevant information.
+    
+    Args:
+        content: The content to process
+        query: Optional query to focus the extraction
+        max_length: Maximum length of processed content
+        
+    Returns:
+        JSON string containing processed information
+    """
+    try:
+        # If content is not too long, return as is
+        if len(content) <= max_length:
+            return json.dumps({
+                "success": True,
+                "content": content,
+                "is_truncated": False
+            })
+            
+        # If we have a query, try to extract relevant sections
+        if query:
+            # Split content into paragraphs
+            paragraphs = content.split('\n\n')
+            
+            # Score paragraphs based on relevance to query
+            relevant_paragraphs = []
+            for para in paragraphs:
+                # Simple relevance check - can be improved with embeddings
+                if any(term.lower() in para.lower() for term in query.split()):
+                    relevant_paragraphs.append(para)
+            
+            # Combine relevant paragraphs up to max_length
+            processed_content = ""
+            for para in relevant_paragraphs:
+                if len(processed_content) + len(para) + 2 <= max_length:
+                    processed_content += para + "\n\n"
+                else:
+                    break
+                    
+            return json.dumps({
+                "success": True,
+                "content": processed_content.strip(),
+                "is_truncated": True,
+                "original_length": len(content),
+                "processed_length": len(processed_content)
+            })
+            
+        # If no query, take the first and last parts
+        start = content[:max_length//2]
+        end = content[-max_length//2:]
+        
+        return json.dumps({
+            "success": True,
+            "content": f"{start}\n\n[...content truncated...]\n\n{end}",
+            "is_truncated": True,
+            "original_length": len(content),
+            "processed_length": max_length
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e),
+            "content": None
+        })
+
+process_content_tool = Tool(
+    name="process_long_content",
+    description="""
+    Process and extract relevant information from long content.
+    Useful when dealing with large articles or documents.
+    Can focus extraction based on a specific query.
+    
+    Args:
+        content: The content to process
+        query: Optional query to focus the extraction
+        max_length: Maximum length of processed content
+        
+    Returns:
+        Processed and potentially shortened content, focusing on relevant parts.
+    """,
+    func=process_long_content
+)
+
+# Add the new tool to your tools list
+tools = [
+    get_feed_details_tool,
+    get_category_feeds_tool,
+    fetch_feed_tool,
+    search_related_feeds_tool,
+    crawl_url_tool,
+    process_content_tool  # Add the new tool
+] 
 
 # MCP tools
 def list_feeds() -> str:
@@ -768,4 +926,4 @@ get_feed_summary_tool = Tool(
     name="get_feed_summary_feeds_feed_id_summary_get",
     description="Get a summary of a feed including its latest entries.",
     func=get_feed_summary
-) 
+)
