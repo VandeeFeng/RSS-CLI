@@ -66,86 +66,84 @@ def main():
         epilog="""
 Examples:
   # List all available feed categories
-  python main.py --list-categories
+  python main.py list-categories
   
   # List all configured feeds
-  python main.py --list-feeds
+  python main.py list-feeds
   
   # Add feeds interactively
-  python main.py --add-feeds
+  python main.py add-feeds
   
   # Fetch latest content for a single feed
-  python main.py --fetch-feed "Hacker News"
+  python main.py fetch-feed "Hacker News"
   
   # Fetch latest content for a single feed with custom limits
-  python main.py --fetch-feed "Hacker News" -items 5 -hours 12
+  python main.py fetch-feed "Hacker News" -items 5 -hours 12
   
   # Fetch latest content for all feeds in a category
-  python main.py --fetch-category tech
+  python main.py fetch-category tech
   
   # Fetch latest content for all feeds
-  python main.py --fetch-all
+  python main.py fetch-all
   
   # Update feeds configuration from feeds.json
-  python main.py --update-feedjs
+  python main.py update-feedjs
   
   # Import feeds from OPML file
-  python main.py --import-opml feeds.opml
+  python main.py import-opml feeds.opml
   
   # Start chat interface
-  python main.py --chat
+  python main.py chat
   
   # Enable debug mode
-  python main.py --chat --debug
+  python main.py chat -debug
 
   # Start MCP server
-  python main.py --mcp
+  python main.py mcp
         """
     )
     
+    # Global options that can be used with any command
+    parser.add_argument('-debug', action='store_true', help='Enable debug mode for verbose output')
+    parser.add_argument('-items', type=int, help='Maximum number of items to fetch per feed')
+    parser.add_argument('-hours', type=int, help='Maximum age of entries in hours')
+    
+    subparsers = parser.add_subparsers(dest='command', help='Available commands', required=False)
+    
+    # Help command
+    subparsers.add_parser('help', help='Show this help message')
+    
     # Database management
-    db_group = parser.add_argument_group('Database Management')
-    db_group.add_argument('--reset-db', action='store_true', help='Reset the database and recreate all tables')
+    subparsers.add_parser('reset-db', help='Reset the database and recreate all tables')
     
     # Feed management
-    feed_group = parser.add_argument_group('Feed Management')
-    feed_group.add_argument('--add-feeds', action='store_true', 
-        help='Interactively add new RSS feeds. You will be prompted to enter category, URL, and name for each feed. '
-             'Feeds will be saved to both feeds.json and database.')
-    feed_group.add_argument('--category', type=str, help='Specify a category when fetching feeds')
-    feed_group.add_argument('--fetch-all', action='store_true', help='Fetch latest content for all feeds')
-    feed_group.add_argument('--fetch-category', type=str, help='Fetch latest content for all feeds in a specific category')
-    feed_group.add_argument('--fetch-feed', type=str, metavar='NAME', help='Fetch latest content for a single feed by name')
-    feed_group.add_argument('--import-opml', type=str, metavar='FILE', help='Import feeds from OPML file')
-    feed_group.add_argument(
-        '--update-feedjs',
-        action='store_true',
-        help='Update feeds configuration from feeds.json'
-    )
+    add_feeds = subparsers.add_parser('add-feeds', help='Interactively add new RSS feeds')
+    add_feeds.add_argument('-category', type=str, help='Specify a category when adding feeds')
     
-    # Feed fetch options
-    fetch_group = parser.add_argument_group('Feed Fetch Options')
-    fetch_group.add_argument('-items', type=int, help='Maximum number of items to fetch per feed (overrides RSS_MAX_ENTRIES_PER_FEED)')
-    fetch_group.add_argument('-hours', type=int, help='Maximum age of entries in hours (overrides RSS_MAX_AGE_HOURS)')
+    subparsers.add_parser('fetch-all', help='Fetch latest content for all feeds')
+    
+    fetch_category = subparsers.add_parser('fetch-category', help='Fetch latest content for all feeds in a specific category')
+    fetch_category.add_argument('category', type=str, help='Category name')
+    
+    fetch_feed = subparsers.add_parser('fetch-feed', help='Fetch latest content for a single feed by name')
+    fetch_feed.add_argument('name', type=str, help='Feed name')
+    
+    import_opml = subparsers.add_parser('import-opml', help='Import feeds from OPML file')
+    import_opml.add_argument('file', type=str, help='OPML file path')
+    
+    subparsers.add_parser('update-feedjs', help='Update feeds configuration from feeds.json')
     
     # Information display
-    info_group = parser.add_argument_group('Information Display')
-    info_group.add_argument('--list-categories', action='store_true', help='List all available feed categories')
-    info_group.add_argument('--list-feeds', action='store_true', help='List all configured feeds')
+    subparsers.add_parser('list-categories', help='List all available feed categories')
+    subparsers.add_parser('list-feeds', help='List all configured feeds')
     
     # Chat interface
-    chat_group = parser.add_argument_group('Chat Interface')
-    chat_group.add_argument('--chat', action='store_true', help='Start the AI chat interface')
+    subparsers.add_parser('chat', help='Start the AI chat interface')
     
-    # Debug options
-    debug_group = parser.add_argument_group('Debug Options')
-    debug_group.add_argument('--debug', action='store_true', help='Enable debug mode for verbose output')
-
     # MCP server
-    mcp_group = parser.add_argument_group('MCP Server')
-    mcp_group.add_argument('--mcp', action='store_true', help='Start the MCP server')
-    mcp_group.add_argument('--mcp-port', type=int, default=8000, help='Port for MCP server (default: 8000)')
-    mcp_group.add_argument('--mcp-host', type=str, default="127.0.0.1", help='Host for MCP server (default: 127.0.0.1)')
+    mcp = subparsers.add_parser('mcp', help='Start the MCP server')
+    mcp.add_argument('-port', type=int, default=8000, help='Port for MCP server (default: 8000)')
+    mcp.add_argument('-host', type=str, default="127.0.0.1", help='Host for MCP server (default: 127.0.0.1)')
 
     args = parser.parse_args()
     
@@ -155,15 +153,24 @@ Examples:
     if args.hours is not None:
         config.rss.max_age_hours = args.hours
     
-    if args.list_categories:
+    # If no command is provided, default to chat mode
+    if not args.command:
+        args.command = 'chat'
+    
+    # Handle help command
+    if args.command == 'help':
+        parser.print_help()
+        return
+        
+    if args.command == 'list-categories':
         display_categories()
         return
     
-    if args.list_feeds:
+    if args.command == 'list-feeds':
         display_feeds()
         return
     
-    if args.reset_db:
+    if args.command == 'reset-db':
         with console.status("[bold yellow]Resetting database...[/bold yellow]"):
             drop_db()
             init_db()
@@ -172,25 +179,25 @@ Examples:
         # Just ensure tables exist
         init_db()
     
-    if args.add_feeds:
-        add_feeds(args.category, args.debug)
+    if args.command == 'add-feeds':
+        add_feeds(args.category if hasattr(args, 'category') else None, args.debug)
     
-    if args.fetch_category:
-        fetch_category_feeds(args.fetch_category, args.debug)
+    if args.command == 'fetch-category':
+        fetch_category_feeds(args.category, args.debug)
     
-    if args.fetch_feed:
-        fetch_single_feed(args.fetch_feed, args.debug)
+    if args.command == 'fetch-feed':
+        fetch_single_feed(args.name, args.debug)
     
-    if args.fetch_all:
+    if args.command == 'fetch-all':
         fetch_all_feeds(args.debug)
     
-    if args.update_feedjs:
+    if args.command == 'update-feedjs':
         update_feeds_from_json(args.debug)
     
-    if args.import_opml:
-        import_opml(args.import_opml, args.debug)
+    if args.command == 'import-opml':
+        import_opml(args.file, args.debug)
     
-    if args.mcp:
+    if args.command == 'mcp':
         console.print("[bold green]Starting MCP server...[/bold green]")
         console.print(Panel("""[bold cyan]Configure MCP in Cursor settings:[/bold cyan]
 
@@ -203,14 +210,14 @@ Examples:
 }
 
 [dim]The server is now running at http://127.0.0.1:8000[/dim]""", border_style="green"))
-        uvicorn.run(mcp_app, host=args.mcp_host, port=args.mcp_port, loop="asyncio")
+        uvicorn.run(mcp_app, 
+                   host=args.host if hasattr(args, 'host') else "127.0.0.1",
+                   port=args.port if hasattr(args, 'port') else 8000, 
+                   loop="asyncio")
         return
 
     # Start chat interface if requested or if no other action was specified
-    if args.chat or not any([args.reset_db, args.add_feeds, args.list_categories, 
-                           args.list_feeds, args.fetch_all, args.fetch_category,
-                           args.fetch_feed, args.update_feedjs, args.import_opml,
-                           args.mcp]):
+    if args.command == 'chat':
         # Create chat instance
         chat = RSSChat(config=config, debug=args.debug)
         
@@ -226,7 +233,7 @@ You can:
 4. 🔄 Update feeds
    - Example: "update OpenAI Blog"
 
-💡 Tip: Use `--help` to see all available command line options
+💡 Tip: Use `-help` to see all available command line options
 
 Type 'quit' to exit."""
         
