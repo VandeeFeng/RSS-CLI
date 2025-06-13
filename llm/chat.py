@@ -10,6 +10,8 @@ from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.schema import AgentAction, AgentFinish, AIMessage, HumanMessage
 from rich.console import Console
+from langchain_core.messages.utils import trim_messages, count_tokens_approximately
+from langchain.memory import ConversationBufferMemory
 
 from config import Config
 from .tools import (
@@ -27,23 +29,24 @@ logger = logging.getLogger('rss_ai')
 
 PROMPT = """You are an intelligent RSS feed assistant helping users understand web content and manage their RSS feeds. You have access to several tools to help with this task.
 
-Content Management Instructions:
+Context Management Instructions:
 
-1. Content Storage:
-   - After using crawl_url tool, store the response in your working memory
-   - The content is in the 'content' field of the crawl_url tool's response
-   - Each tool response contains important context for future reference
-   - Pay attention to all Observation sections from previous tool calls
-
-2. Content Retrieval:
-   - When user asks about previously crawled content:
-     a. Look in previous Observations for the crawl_url response
-     b. Extract the content from that Observation
+1. Conversation and Content History:
+   - You have access to the conversation history through the messages in your state
+   - Use this history to maintain context and provide consistent responses
+   - The history includes:
+     a. Previous user questions and your responses
+     b. Content from crawled URLs (in the 'content' field of crawl_url responses)
+     c. Results from tool calls and feed searches
+   - When user asks about previously discussed topics or crawled content:
+     a. Check the conversation history first
+     b. Look in previous Observations for relevant tool responses
      c. Use process_long_content tool if needed for display
-   - Do NOT crawl the same URL again unless explicitly asked
-   - Reference the content from previous Observations
+   - Do NOT repeat tool calls (like crawl_url) unless explicitly asked
+   - Be aware that older messages might be summarized or trimmed
+   - If you're unsure about the history, ask for clarification
 
-3. Tool Usage Strategies:
+2. Tool Usage Strategies:
 
    a. For Author/Source Specific Queries (e.g., "What did [author] write recently?"):
       1. First use find_feeds to locate feeds by the author's name
@@ -63,7 +66,7 @@ Content Management Instructions:
       - Use get_feed_details to examine specific feeds
       - Use fetch_feed to update feed content
 
-4. Common Query Patterns:
+3. Common Query Patterns:
 
    a. Recent Updates Query:
       - "What did [author] write recently?"
@@ -92,11 +95,13 @@ Content Management Instructions:
 
 Remember:
 - Always try to use multiple tools in combination when appropriate
-- Start with broad tools (list_feeds, search_related_feeds) then narrow down
+- Start with broad tools (find_feeds, search_related_feeds) then narrow down
 - Use get_feed_details and fetch_feed to get specific information
 - Consider time-based filtering for recent content
 - Handle errors gracefully and explain any issues
 - Provide clear options for next steps
+- Use conversation history to maintain context and avoid repeating information
+- If referring to previous information, mention that it's from earlier in the conversation
 
 You have access to the following tools:
 {tools}
@@ -167,9 +172,24 @@ class RSSChat:
             process_content_tool
         ]
         
+        # Add memory
+        self.memory = ConversationBufferMemory(return_messages=True)
+        
         # Create the agent executor using create_react_agent
         prompt = PromptTemplate.from_template(PROMPT)
         
+        def pre_model_hook(state):
+            # Trim messages to prevent context window overflow
+            trimmed_messages = trim_messages(
+                state["messages"],
+                strategy="last",
+                token_counter=count_tokens_approximately,
+                max_tokens=2000,  # Adjust based on your model's context window
+                start_on="human",
+                end_on=("human", "tool"),
+            )
+            return {"llm_input_messages": trimmed_messages}
+            
         self.agent = create_react_agent(
             llm=self.llm,
             tools=self.tools,
@@ -180,9 +200,11 @@ class RSSChat:
             agent=self.agent,
             tools=self.tools,
             handle_parsing_errors=True,
-            max_iterations=5,  
+            max_iterations=5,
             verbose=True,
-            callbacks=[self.callback_handler]
+            callbacks=[self.callback_handler],
+            memory=self.memory,
+            pre_model_hook=pre_model_hook
         )
     
     def format_step(self, step) -> str:
