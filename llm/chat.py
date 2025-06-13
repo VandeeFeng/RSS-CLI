@@ -1,17 +1,25 @@
 import logging
 import json
 import time  
-from typing import List, Optional, Iterator
+from typing import List, Optional, Iterator, TypedDict, Annotated, Sequence
 from contextlib import contextmanager
 
-from langchain.agents import Tool, AgentExecutor, create_react_agent
-from langchain_ollama import OllamaLLM
-from langchain.prompts import PromptTemplate
+from langchain.agents import Tool
+from langchain_ollama.chat_models import ChatOllama
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import AgentAction, AgentFinish, AIMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    BaseMessage,
+    ToolMessage,
+    SystemMessage,
+)
 from rich.console import Console
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
 from langchain.memory import ConversationBufferMemory
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langgraph.graph.message import add_messages
 
 from config import Config
 from .tools import (
@@ -27,99 +35,11 @@ from database.db import SessionLocal
 
 logger = logging.getLogger('rss_ai')
 
-PROMPT = """You are an intelligent RSS feed assistant helping users understand web content and manage their RSS feeds. You have access to several tools to help with this task.
+PROMPT = """You are a helpful assistant. You have access to a number of tools.
+Use them when you need to answer a user's question."""
 
-Context Management Instructions:
-
-1. Conversation and Content History:
-   - You have access to the conversation history through the messages in your state
-   - Use this history to maintain context and provide consistent responses
-   - The history includes:
-     a. Previous user questions and your responses
-     b. Content from crawled URLs (in the 'content' field of crawl_url responses)
-     c. Results from tool calls and feed searches
-   - When user asks about previously discussed topics or crawled content:
-     a. Check the conversation history first
-     b. Look in previous Observations for relevant tool responses
-     c. Use process_long_content tool if needed for display
-   - Do NOT repeat tool calls (like crawl_url) unless explicitly asked
-   - Be aware that older messages might be summarized or trimmed
-   - If you're unsure about the history, ask for clarification
-
-2. Tool Usage Strategies:
-
-   a. For Author/Source Specific Queries (e.g., "What did [author] write recently?"):
-      1. First use find_feeds to locate feeds by the author's name
-      2. For each relevant feed found, use get_feed_details to get recent content
-      3. If needed, use fetch_feed to get the latest updates
-      4. Use search_related_feeds only if the above steps don't yield results
-
-   b. For Topic Based Queries (e.g., "Find articles about AI"):
-      1. Try find_feeds first to locate topic-specific feeds
-      2. Use search_related_feeds to find relevant content across all feeds
-      3. For promising feeds, use get_feed_details to get more information
-      4. Use fetch_feed if you need the most recent content
-
-   c. For Feed Management:
-      - Use find_feeds to discover feeds by name or description
-      - Use get_category_feeds to explore specific categories
-      - Use get_feed_details to examine specific feeds
-      - Use fetch_feed to update feed content
-
-3. Common Query Patterns:
-
-   a. Recent Updates Query:
-      - "What did [author] write recently?"
-      - "What's new in [category]?"
-      - "Latest posts from [feed]?"
-      Steps:
-      1. Identify the type (author/category/feed)
-      2. Use appropriate tools to find feeds
-      3. Get recent content from those feeds
-
-   b. Topic Search Query:
-      - "Find articles about [topic]"
-      - "What's being written about [subject]?"
-      Steps:
-      1. Use search_related_feeds for initial search
-      2. Get details for most relevant feeds
-      3. Present results ordered by relevance
-
-   c. Feed Discovery:
-      - "Show me feeds about [topic]"
-      - "Find RSS feeds for [website/author]"
-      Steps:
-      1. List relevant feeds or categories
-      2. Get details for promising feeds
-      3. Fetch recent content if needed
-
-Remember:
-- Always try to use multiple tools in combination when appropriate
-- Start with broad tools (find_feeds, search_related_feeds) then narrow down
-- Use get_feed_details and fetch_feed to get specific information
-- Consider time-based filtering for recent content
-- Handle errors gracefully and explain any issues
-- Provide clear options for next steps
-- Use conversation history to maintain context and avoid repeating information
-- If referring to previous information, mention that it's from earlier in the conversation
-
-You have access to the following tools:
-{tools}
-
-Use the following format:
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Begin!
-
-Question: {input}
-{agent_scratchpad}"""
+class AgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
 
 class StreamingCallbackHandler(BaseCallbackHandler):
     """Callback handler for streaming output to the console."""
@@ -154,12 +74,14 @@ class RSSChat:
         logger.setLevel(log_level)
         
         # Initialize LLM
-        self.llm = OllamaLLM(
+        self.llm = ChatOllama(
             base_url=config.ollama.base_url,
             model=config.ollama.chat_model,
-            callbacks=[self.callback_handler]
+            temperature=0,
         )
-        logger.debug(f"Initialized LLM with model {config.ollama.chat_model} at {config.ollama.base_url}")
+        logger.debug(
+            f"Initialized LLM with model {config.ollama.chat_model} at {config.ollama.base_url}"
+        )
         
         # Define tools
         self.tools: List[Tool] = [
@@ -172,153 +94,71 @@ class RSSChat:
             process_content_tool
         ]
         
-        # Add memory
-        self.memory = ConversationBufferMemory(return_messages=True)
-        
-        # Create the agent executor using create_react_agent
-        prompt = PromptTemplate.from_template(PROMPT)
-        
-        def pre_model_hook(state):
-            # Trim messages to prevent context window overflow
-            trimmed_messages = trim_messages(
-                state["messages"],
-                strategy="last",
-                token_counter=count_tokens_approximately,
-                max_tokens=2000,  # Adjust based on your model's context window
-                start_on="human",
-                end_on=("human", "tool"),
-            )
-            return {"llm_input_messages": trimmed_messages}
-            
-        self.agent = create_react_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=prompt
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+
+        # Define the graph
+        workflow = StateGraph(AgentState)
+
+        workflow.add_node("agent", self.run_agent)
+        workflow.add_node("action", ToolNode(self.tools))
+
+        workflow.set_entry_point("agent")
+
+        workflow.add_conditional_edges(
+            "agent", self.should_continue, {"continue": "action", "end": END}
         )
-        
-        self.agent_executor = AgentExecutor.from_agent_and_tools(
-            agent=self.agent,
-            tools=self.tools,
-            handle_parsing_errors=True,
-            max_iterations=5,
-            verbose=True,
-            callbacks=[self.callback_handler],
-            memory=self.memory,
-            pre_model_hook=pre_model_hook
-        )
+
+        workflow.add_edge("action", "agent")
+
+        self.agent_executor = workflow.compile()
     
-    def format_step(self, step) -> str:
-        """Format an agent step for display."""
-        action, observation = step
-        
-        if isinstance(action, AgentAction):
-            return f"\nThought: {action.log}\nAction: {action.tool}\nAction Input: {action.tool_input}\nObservation: {observation}\n"
-        elif isinstance(action, AgentFinish):
-            return f"\nThought: {action.log}\nFinal Answer: {action.return_values.get('output', '')}\n"
-        else:
-            return f"\nThought: {action}\n"
-    
-    def format_observation(self, observation_str: str) -> str:
-        """Format an observation string with better error handling."""
-        try:
-            observation = json.loads(observation_str)
-            if isinstance(observation, dict):
-                if observation.get("success") is False:
-                    self.waiting_for_user_input = True
-                    error_msg = str(observation.get('error', 'Unknown error'))
-                    return f"Error: {error_msg}. Please provide more information or try a different approach."
-                elif "feed" in observation:
-                    feed = observation["feed"]
-                    title = str(feed.get('title', 'Untitled'))
-                    last_updated = str(feed.get('last_updated', 'Unknown'))
-                    description = str(feed.get('description', 'No description'))
-                    return f"Feed: {title}\\nLast Updated: {last_updated}\\nDescription: {description}"
-                return str(observation)
-            return observation_str
-        except json.JSONDecodeError:
-            self.waiting_for_user_input = True
-            return "Error: Unable to parse tool response. Please try again with different parameters."
-    
+    def should_continue(self, state: AgentState) -> str:
+        if isinstance(state["messages"][-1], AIMessage) and state["messages"][-1].tool_calls:
+            return "continue"
+        return "end"
+
+    def run_agent(self, state: AgentState, **kwargs):
+        """
+        Invokes the agent with the current state and returns the new message.
+        """
+        response = self.llm_with_tools.invoke(state["messages"], **kwargs)
+        return {"messages": [response]}
+
     def chat_stream(self, message: str) -> Iterator[str]:
         """Process a chat message using the agent with streaming output and timeout."""
         try:
-            with get_db_session() as db:
-                current_input = str(message)
-                agent_inputs = {"input": current_input}
-                final_answer_sent = False
+            with get_db_session():
+                inputs = {"messages": [SystemMessage(content=PROMPT), HumanMessage(content=message)]}
                 start_time = time.time()
-                self.waiting_for_user_input = False
-                
-                for chunk in self.agent_executor.stream(agent_inputs):
-                    # Check for timeout
+                for event in self.agent_executor.stream(
+                    inputs, config={"callbacks": [self.callback_handler], "recursion_limit": 10}
+                ):
                     if time.time() - start_time > self.timeout:
-                        yield "\nOperation timed out. Please try again with a more specific request."
+                        yield "\nOperation timed out."
                         break
-                        
-                    # Check if waiting for user input
-                    if self.waiting_for_user_input and not final_answer_sent:
-                        yield "\nNeed more information. Please provide additional details or try a different approach."
-                        break
-                        
-                    if isinstance(chunk, (AIMessage, HumanMessage)):
-                        if not final_answer_sent:
-                            yield str(chunk.content)
-                    elif isinstance(chunk, dict):
-                        if "intermediate_steps" in chunk:
-                            for step in chunk["intermediate_steps"]:
-                                action, observation_obj = step
-                                if not final_answer_sent:
-                                    yield f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}\\n"
-                                    formatted_observation = self.format_observation(str(observation_obj))
-                                    yield f"Observation: {formatted_observation}\\n"
-                                    
-                                    # Check if we need to stop for user input after each step
-                                    if self.waiting_for_user_input:
-                                        break
-                                        
-                        if "output" in chunk and not final_answer_sent:
-                            yield f"Final Answer: {str(chunk['output'])}".strip()
-                            final_answer_sent = True
-                    elif isinstance(chunk, str) and not final_answer_sent:
-                        yield chunk
-                
+                    if "agent" in event:
+                        agent_result = event["agent"]["messages"][-1]
+                        if isinstance(agent_result, AIMessage):
+                            if agent_result.tool_calls:
+                                for tool_call in agent_result.tool_calls:
+                                    yield f"Tool Call: {tool_call['name']}({tool_call['args']})\n"
+                            else:
+                                yield f"Final Answer: {agent_result.content}\n"
+                    if "action" in event:
+                        action_result = event["action"]["messages"][-1]
+                        yield f"Tool Result: {action_result.content}\n"
         except Exception as e:
-            logger.error(f"Error in chat_stream: {str(e)}")
-            if self.debug:
-                yield f"\nError: {str(e)}\n"
-            else:
-                yield "\nSorry, I encountered an error processing your request. Please try again with a different approach.\n"
-        
+            logger.error(f"Error in chat_stream: {e}")
+            yield f"\nError: {e}\n"
+
     def chat(self, message: str) -> Optional[str]:
         """Process a chat message using the agent (non-streaming)."""
         try:
-            with get_db_session() as db:
-                current_input = str(message)
-                agent_inputs = {"input": current_input}
-                
-                response = self.agent_executor.invoke(agent_inputs)
-                
-                if isinstance(response, (AIMessage, HumanMessage)):
-                    return str(response.content)
-                elif isinstance(response, dict):
-                    if "intermediate_steps" in response:
-                        result = []
-                        for step in response["intermediate_steps"]:
-                            action, observation_obj = step # observation_obj is now a string
-                            result.append(f"\\nThought: {str(action.log)}\\nAction: {str(action.tool)}\\nAction Input: {str(action.tool_input)}")
-                            result.append(f"Observation: {self.format_observation(str(observation_obj))}") # Pass string
-                        if "output" in response:
-                            result.append(f"\\nFinal Answer: {str(response['output'])}".strip())
-                        return "\\n".join(result)
-                    elif "output" in response:
-                        return str(response["output"]).strip()
-                elif isinstance(response, str):
-                    return response
-                
-                return None
-                
+            with get_db_session():
+                inputs = {"messages": [SystemMessage(content=PROMPT), HumanMessage(content=message)]}
+                response = self.agent_executor.invoke(inputs, config={"recursion_limit": 10})
+                final_message = response["messages"][-1]
+                return final_message.content if isinstance(final_message, AIMessage) else str(final_message.content)
         except Exception as e:
-            logger.error(f"Error in chat: {str(e)}")
-            if self.debug:
-                return f"Error: {str(e)}"
-            return "Sorry, I encountered an error processing your request. Please try again." 
+            logger.error(f"Error in chat: {e}")
+            return f"Error: {e}" 
