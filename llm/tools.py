@@ -230,12 +230,14 @@ def get_feed_details(feed_name: str) -> str:
             }
             return json.dumps(error_response)
 
-def search_related_feeds(query: str, limit: int = 5) -> str:
+def search_related_feeds(query: str, time_filter: str = None, sort_by: str = "relevance", limit: int = 5) -> str:
     """
-    Search for feeds and entries related to the given query using semantic search
+    Search for feeds and entries related to the given query using semantic search with advanced filtering
     
     Args:
         query: Search query (e.g., "AI news", "programming tutorials")
+        time_filter: Filter feeds by update time ("24h", "week", "month", None for all)
+        sort_by: How to sort results ("relevance", "recent", "combined")
         limit: Maximum number of results to return
     
     Returns:
@@ -248,62 +250,146 @@ def search_related_feeds(query: str, limit: int = 5) -> str:
     """
     with get_db_session() as db:
         try:
-            # First try to find directly related entries using HNSW index
+            # First try to find directly related entries using semantic search
             fetcher = RSSFetcher()
-            similar_entries = fetcher.search_similar_entries(query, limit=limit*2)  # Get more entries to aggregate feeds
+            similar_entries = fetcher.search_similar_entries(query, limit=limit*2)
+            
+            if not similar_entries:
+                return json.dumps({
+                    "success": True,
+                    "query": query,
+                    "time_filter": time_filter,
+                    "sort_by": sort_by,
+                    "feeds_found": 0,
+                    "feeds": [],
+                    "entries_found": 0,
+                    "entries": [],
+                    "message": "No semantically similar entries found"
+                })
+            
+            # Apply time filter if specified
+            now = datetime.now(tzutc())
+            time_deltas = {
+                "24h": timedelta(hours=24),
+                "week": timedelta(days=7),
+                "month": timedelta(days=30)
+            }
             
             # Group entries by feed and calculate feed relevance
             feed_scores = {}
             entries_by_feed = {}
+            feed_last_updated = {}
             
             for entry in similar_entries:
                 feed_id = entry.feed_id
+                
+                # Get feed and check time filter if specified
+                feed = db.query(DBFeed).filter(DBFeed.id == feed_id).first()
+                if not feed or not feed.last_updated:
+                    continue
+                    
+                if time_filter:
+                    delta = time_deltas.get(time_filter)
+                    if delta and now - feed.last_updated > delta:
+                        continue
+                
+                # Initialize feed data
                 if feed_id not in feed_scores:
                     feed_scores[feed_id] = 0
                     entries_by_feed[feed_id] = []
-                feed_scores[feed_id] += 1  # Each matching entry increases feed relevance
-                entries_by_feed[feed_id].append(entry)
+                    feed_last_updated[feed_id] = feed.last_updated
+                
+                # Calculate entry score based on semantic relevance and recency
+                time_score = 1.0
+                if entry.published_date:
+                    age = now - entry.published_date
+                    # Decay score based on age (1.0 to 0.5 over a month)
+                    time_score = max(0.5, 1.0 - (age.total_seconds() / (30 * 24 * 3600)) * 0.5)
+                
+                # Entries are already sorted by semantic similarity
+                semantic_position = similar_entries.index(entry)
+                semantic_score = 1.0 - (semantic_position / len(similar_entries))
+                
+                # Combined score weights semantic relevance more heavily
+                combined_score = (semantic_score * 0.7) + (time_score * 0.3)
+                
+                feed_scores[feed_id] += combined_score
+                entries_by_feed[feed_id].append((entry, combined_score))
+            
+            if not feed_scores:
+                return json.dumps({
+                    "success": True,
+                    "query": query,
+                    "time_filter": time_filter,
+                    "sort_by": sort_by,
+                    "feeds_found": 0,
+                    "feeds": [],
+                    "entries_found": 0,
+                    "entries": [],
+                    "message": "No feeds match the time filter criteria"
+                })
+            
+            # Sort feeds based on specified criteria
+            if sort_by == "recent":
+                sorted_feeds = sorted(feed_scores.keys(), 
+                                   key=lambda x: feed_last_updated[x],
+                                   reverse=True)
+            elif sort_by == "combined":
+                # Combine relevance score with recency
+                sorted_feeds = sorted(feed_scores.keys(),
+                                   key=lambda x: (feed_scores[x] * 0.7 + 
+                                                (1.0 - (now - feed_last_updated[x]).total_seconds() / 
+                                                (30 * 24 * 3600)) * 0.3),
+                                   reverse=True)
+            else:  # default to relevance
+                sorted_feeds = sorted(feed_scores.keys(),
+                                   key=lambda x: feed_scores[x],
+                                   reverse=True)
             
             # Get feed information
             feeds_info = []
             entries_info = []
             seen_entries = set()
             
-            # Sort feeds by relevance score
-            for feed_id, score in sorted(feed_scores.items(), key=lambda x: x[1], reverse=True)[:limit]:
+            # Process feeds in sorted order
+            for feed_id in sorted_feeds[:limit]:
                 feed = db.query(DBFeed).filter(DBFeed.id == feed_id).first()
                 if not feed:
                     continue
                 
-                # Get recent entries for this feed
-                feed_entries = entries_by_feed[feed_id]
+                # Sort feed entries by score
+                sorted_entries = sorted(entries_by_feed[feed_id],
+                                     key=lambda x: x[1],  # Sort by combined score
+                                     reverse=True)
                 
                 # Format feed info
                 feeds_info.append({
                     "name": feed.name,
                     "url": feed.url,
                     "description": feed.description,
-                    "relevance_score": round(score / len(similar_entries), 3),
+                    "relevance_score": round(feed_scores[feed_id] / len(similar_entries), 3),
                     "last_updated": feed.last_updated.isoformat() if feed.last_updated else None,
                     "matching_entries": [
                         {
                             "title": entry.title,
                             "link": entry.link,
                             "published": entry.published_date.isoformat() if entry.published_date else None,
-                            "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content
+                            "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content,
+                            "relevance_score": round(score, 3)
                         }
-                        for entry in feed_entries[:3]  # Top 3 entries per feed
+                        for entry, score in sorted_entries[:3]  # Top 3 entries per feed
                     ]
                 })
                 
                 # Add entries to the separate entries list
-                for entry in feed_entries:
+                for entry, score in sorted_entries:
                     if entry.id not in seen_entries and len(entries_info) < limit:
                         entries_info.append({
                             "title": entry.title,
                             "link": entry.link,
                             "content_preview": entry.content[:200] + "..." if len(entry.content) > 200 else entry.content,
                             "published": entry.published_date.isoformat() if entry.published_date else None,
+                            "relevance_score": round(score, 3),
                             "feed": {
                                 "id": feed.id,
                                 "title": feed.name,
@@ -315,6 +401,8 @@ def search_related_feeds(query: str, limit: int = 5) -> str:
             response = {
                 "success": True,
                 "query": query,
+                "time_filter": time_filter,
+                "sort_by": sort_by,
                 "feeds_found": len(feeds_info),
                 "feeds": feeds_info,
                 "entries_found": len(entries_info),
@@ -323,6 +411,7 @@ def search_related_feeds(query: str, limit: int = 5) -> str:
             return json.dumps(response)
             
         except Exception as e:
+            logger.error(f"Error in search_related_feeds: {str(e)}")
             error_response = {
                 "success": False,
                 "error": str(e),
@@ -499,20 +588,22 @@ get_feed_details_tool = Tool(
 search_related_feeds_tool = Tool(
     name="search_related_feeds",
     description="""
-    Search for feeds and entries related to a given topic or query using semantic search.
-    This tool uses HNSW index for efficient vector similarity search.
+    Search for feeds and entries related to a given topic or query using semantic search with advanced filtering.
+    This tool uses HNSW index for efficient vector similarity search and supports time-based filtering.
     
     Args:
         query (str): Search query describing the topic of interest (e.g., "AI research", "tech news")
+        time_filter (str, optional): Filter feeds by update time ("24h", "week", "month", None for all)
+        sort_by (str, optional): How to sort results ("relevance", "recent", "combined")
         limit (int, optional): Maximum number of results to return (default: 5)
         
     Returns:
         Information about related content, including:
-        - Related feeds sorted by relevance
-        - Matching entries from these feeds
+        - Related feeds sorted by chosen criteria (relevance/recency/combined)
+        - Matching entries from these feeds with relevance scores
         - Content previews and links
         - Publication dates
-        Results are sorted by semantic similarity to the query.
+        Results can be filtered by time and sorted by different criteria.
     """,
     func=search_related_feeds
 )

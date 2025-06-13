@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import requests
 from sqlalchemy.exc import IntegrityError
 from . import FEED_CATEGORIES, _load_feeds
+from sqlalchemy import text
 
 logger = logging.getLogger('rss_ai')
 
@@ -241,7 +242,7 @@ class RSSFetcher:
         
     def search_similar_entries(self, query: str, limit: int = 5, ef_search: int = 40) -> List[FeedEntry]:
         """
-        Search for similar entries using HNSW index
+        Search for similar entries using semantic search with HNSW index
         
         Args:
             query: The search query
@@ -251,13 +252,45 @@ class RSSFetcher:
         Returns:
             List of similar FeedEntry objects
         """
-        query_embedding = self.embeddings.embed_query(query)
-        with get_db_session() as db:
-            # Set ef_search parameter for this query
-            db.execute("SET hnsw.ef_search = :ef_search", {"ef_search": ef_search})
+        try:
+            # Generate embedding for the query
+            query_embedding = self.embeddings.embed_query(query)
             
-            # Using HNSW index for approximate nearest neighbor search
-            results = db.query(FeedEntry).order_by(
-                FeedEntry.embedding.l2_distance(query_embedding)
-            ).limit(limit).all()
-            return results 
+            with get_db_session() as db:
+                try:
+                    # Set ef_search parameter for this query
+                    db.execute(text("SET LOCAL hnsw.ef_search = :ef_search"), {"ef_search": ef_search})
+                    
+                    # Using HNSW index for approximate nearest neighbor search
+                    # We get more results initially to allow for post-filtering
+                    initial_limit = limit * 3
+                    results = db.query(FeedEntry).order_by(
+                        FeedEntry.embedding.l2_distance(query_embedding)
+                    ).limit(initial_limit).all()
+                    
+                    if not results:
+                        logger.debug(f"No results found for query: {query}")
+                        return []
+                    
+                    # Post-process results to improve relevance
+                    processed_results = []
+                    for entry in results:
+                        # Calculate semantic similarity score
+                        title_embedding = self.embeddings.embed_query(entry.title)
+                        similarity = 1.0 / (1.0 + sum((a - b) ** 2 for a, b in zip(query_embedding, title_embedding)) ** 0.5)
+                        
+                        processed_results.append((entry, similarity))
+                    
+                    # Sort by similarity score and take top results
+                    processed_results.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Return only the entries, discarding scores
+                    return [entry for entry, _ in processed_results[:limit]]
+                    
+                except Exception as e:
+                    logger.error(f"Database error in search_similar_entries: {str(e)}")
+                    return []
+                
+        except Exception as e:
+            logger.error(f"Error in search_similar_entries: {str(e)}")
+            return [] 
