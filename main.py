@@ -150,9 +150,9 @@ Examples:
     args = parser.parse_args()
     
     # Override config values if custom limits are provided
-    if args.items is not None:
+    if hasattr(args, 'items') and args.items is not None:
         config.rss.max_entries_per_feed = args.items
-    if args.hours is not None:
+    if hasattr(args, 'hours') and args.hours is not None:
         config.rss.max_age_hours = args.hours
     
     # If no command is provided, default to chat mode
