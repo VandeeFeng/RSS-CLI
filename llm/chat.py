@@ -15,8 +15,6 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from rich.console import Console
-from langchain_core.messages.utils import trim_messages, count_tokens_approximately
-from langchain.memory import ConversationBufferMemory
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
@@ -32,6 +30,7 @@ from .tools import (
     process_content_tool
 )
 from database.db import SessionLocal
+from langchain_core.prompts import PromptTemplate
 
 logger = logging.getLogger('rss_ai')
 
@@ -67,7 +66,7 @@ class RSSChat:
         self.console = Console()
         self.callback_handler = StreamingCallbackHandler(self.console)
         self.waiting_for_user_input = False
-        self.timeout = 30  # 30 seconds timeout
+        self.timeout = 60  # 60 seconds timeout
         
         # Configure logging based on debug mode
         log_level = logging.DEBUG if debug else logging.INFO
@@ -134,19 +133,15 @@ class RSSChat:
                     inputs, config={"callbacks": [self.callback_handler], "recursion_limit": 10}
                 ):
                     if time.time() - start_time > self.timeout:
-                        yield "\nOperation timed out."
+                        yield "\n[red]⚠️ Operation timed out.[/red]"
                         break
                     if "agent" in event:
-                        agent_result = event["agent"]["messages"][-1]
-                        if isinstance(agent_result, AIMessage):
-                            if agent_result.tool_calls:
-                                for tool_call in agent_result.tool_calls:
-                                    yield f"Tool Call: {tool_call['name']}({tool_call['args']})\n"
-                            else:
-                                yield f"Final Answer: {agent_result.content}\n"
+                        # We will announce the tool call in the "action" step,
+                        # so we don't need to yield anything here.
+                        pass
                     if "action" in event:
-                        action_result = event["action"]["messages"][-1]
-                        yield f"Tool Result: {action_result.content}\n"
+                        action_result: ToolMessage = event["action"]["messages"][-1]
+                        yield f"🛠 Tool [[bold green]{action_result.name}[/bold green]] was called.\n\n"
         except Exception as e:
             logger.error(f"Error in chat_stream: {e}")
             yield f"\nError: {e}\n"

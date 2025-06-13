@@ -242,20 +242,31 @@ Type 'quit' to exit."""
         console.print(Panel(Markdown(welcome_md), border_style="green"))
         
         while True:
-            query = console.input("\n[bold cyan]Enter your question[/bold cyan] (or 'quit' to exit): ")
+            query = console.input("\n[bold yellow]🤠 You:[/bold yellow] ")
             if query.lower() == 'quit':
                 break
                 
             try:
-                console.print("\n[bold green]Response:[/bold green]")
-                # Use streaming output
+                console.print("\n[bold green]🤖 Agent:[/bold green]\n")
+                
+                # Stream the response
                 for chunk in chat.chat_stream(query):
-                    if chunk:
-                        console.print(chunk, end="")
-                console.print()  # New line after response
+                    console.print(chunk, end="")
+                console.print()  # Add newline after response
+                
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Chat interrupted by user[/yellow]")
+                break
             except Exception as e:
-                console.print(f"\n[bold red]Error:[/bold red] {str(e)}")
-                console.print("[yellow]Please try again with a different question.[/yellow]")
+                if args.debug:
+                    console.print(f"\n[red]Error: {str(e)}[/red]")
+                else:
+                    console.print("\n[red]An error occurred. Please try again.[/red]")
 
 if __name__ == '__main__':
-    main() 
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Program interrupted by user[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]An unexpected error occurred: {str(e)}[/red]") 
