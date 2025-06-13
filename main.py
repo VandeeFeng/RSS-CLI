@@ -105,10 +105,12 @@ Examples:
     
     # Global options that can be used with any command
     parser.add_argument('-debug', action='store_true', help='Enable debug mode for verbose output')
-    parser.add_argument('-items', type=int, help='Maximum number of items to fetch per feed')
-    parser.add_argument('-hours', type=int, help='Maximum age of entries in hours')
-    
     subparsers = parser.add_subparsers(dest='command', help='Available commands', required=False)
+    
+    # Common arguments for fetch commands
+    fetch_parent_parser = argparse.ArgumentParser(add_help=False)
+    fetch_parent_parser.add_argument('-items', type=int, help='Maximum number of items to fetch per feed')
+    fetch_parent_parser.add_argument('-hours', type=int, help='Maximum age of entries in hours')
     
     # Help command
     subparsers.add_parser('help', help='Show this help message')
@@ -120,12 +122,12 @@ Examples:
     add_feeds = subparsers.add_parser('add-feeds', help='Interactively add new RSS feeds')
     add_feeds.add_argument('-category', type=str, help='Specify a category when adding feeds')
     
-    subparsers.add_parser('fetch-all', help='Fetch latest content for all feeds')
+    subparsers.add_parser('fetch-all', help='Fetch latest content for all feeds', parents=[fetch_parent_parser])
     
-    fetch_category = subparsers.add_parser('fetch-category', help='Fetch latest content for all feeds in a specific category')
+    fetch_category = subparsers.add_parser('fetch-category', help='Fetch latest content for all feeds in a specific category', parents=[fetch_parent_parser])
     fetch_category.add_argument('category', type=str, help='Category name')
     
-    fetch_feed = subparsers.add_parser('fetch-feed', help='Fetch latest content for a single feed by name')
+    fetch_feed = subparsers.add_parser('fetch-feed', help='Fetch latest content for a single feed by name', parents=[fetch_parent_parser])
     fetch_feed.add_argument('name', type=str, help='Feed name')
     
     import_opml = subparsers.add_parser('import-opml', help='Import feeds from OPML file')
