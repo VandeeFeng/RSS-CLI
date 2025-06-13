@@ -17,7 +17,9 @@ from .tools import (
     get_category_feeds_tool,
     fetch_feed_tool,
     search_related_feeds_tool,
-    crawl_url_tool
+    find_feeds_tool,
+    crawl_url_tool,
+    process_content_tool
 )
 from database.db import SessionLocal
 
@@ -41,19 +43,58 @@ Content Management Instructions:
    - Do NOT crawl the same URL again unless explicitly asked
    - Reference the content from previous Observations
 
-3. Content Processing:
-   - For long content, use process_long_content tool with:
-     a. The content from previous Observations
-     b. User's specific query if available
-     c. Appropriate max_length for display
-   - Keep track of which URLs have been crawled
-   - Remember the results of your previous tool calls
+3. Tool Usage Strategies:
+
+   a. For Author/Source Specific Queries (e.g., "What did [author] write recently?"):
+      1. First use find_feeds to locate feeds by the author's name
+      2. For each relevant feed found, use get_feed_details to get recent content
+      3. If needed, use fetch_feed to get the latest updates
+      4. Use search_related_feeds only if the above steps don't yield results
+
+   b. For Topic Based Queries (e.g., "Find articles about AI"):
+      1. Try find_feeds first to locate topic-specific feeds
+      2. Use search_related_feeds to find relevant content across all feeds
+      3. For promising feeds, use get_feed_details to get more information
+      4. Use fetch_feed if you need the most recent content
+
+   c. For Feed Management:
+      - Use find_feeds to discover feeds by name or description
+      - Use get_category_feeds to explore specific categories
+      - Use get_feed_details to examine specific feeds
+      - Use fetch_feed to update feed content
+
+4. Common Query Patterns:
+
+   a. Recent Updates Query:
+      - "What did [author] write recently?"
+      - "What's new in [category]?"
+      - "Latest posts from [feed]?"
+      Steps:
+      1. Identify the type (author/category/feed)
+      2. Use appropriate tools to find feeds
+      3. Get recent content from those feeds
+
+   b. Topic Search Query:
+      - "Find articles about [topic]"
+      - "What's being written about [subject]?"
+      Steps:
+      1. Use search_related_feeds for initial search
+      2. Get details for most relevant feeds
+      3. Present results ordered by relevance
+
+   c. Feed Discovery:
+      - "Show me feeds about [topic]"
+      - "Find RSS feeds for [website/author]"
+      Steps:
+      1. List relevant feeds or categories
+      2. Get details for promising feeds
+      3. Fetch recent content if needed
 
 Remember:
-- Store tool responses in your working memory
-- Look up previous content in Observations instead of re-crawling
-- Use process_long_content only for display, not for storage
-- Track which URLs have been crawled
+- Always try to use multiple tools in combination when appropriate
+- Start with broad tools (list_feeds, search_related_feeds) then narrow down
+- Use get_feed_details and fetch_feed to get specific information
+- Consider time-based filtering for recent content
 - Handle errors gracefully and explain any issues
 - Provide clear options for next steps
 
@@ -117,11 +158,13 @@ class RSSChat:
         
         # Define tools
         self.tools: List[Tool] = [
+            find_feeds_tool,
             get_feed_details_tool,
             get_category_feeds_tool,
             fetch_feed_tool,
             search_related_feeds_tool,
-            crawl_url_tool
+            crawl_url_tool,
+            process_content_tool
         ]
         
         # Create the agent executor using create_react_agent

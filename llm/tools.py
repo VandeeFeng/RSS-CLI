@@ -850,15 +850,139 @@ process_content_tool = Tool(
     func=process_long_content
 )
 
-# Add the new tool to your tools list
+def find_feeds(query: str, search_type: str = "all") -> str:
+    """
+    Find feeds by name or description using fuzzy matching
+    
+    Args:
+        query: Search term to find in feed names or descriptions
+        search_type: Where to search - "name", "description", or "all" (default)
+        
+    Returns:
+        JSON string containing:
+        - success: bool indicating if the operation was successful
+        - feeds: list of matching feeds with their details
+        - total_feeds: number of feeds found
+        - search_info: information about the search performed
+    """
+    with get_db_session() as db:
+        try:
+            # Get all feeds from database
+            feeds_query = db.query(DBFeed)
+            
+            # Apply search filters
+            if search_type == "name":
+                feeds = feeds_query.filter(DBFeed.name.ilike(f"%{query}%")).all()
+            elif search_type == "description":
+                feeds = feeds_query.filter(DBFeed.description.ilike(f"%{query}%")).all()
+            else:  # search_type == "all"
+                feeds = feeds_query.filter(
+                    (DBFeed.name.ilike(f"%{query}%")) |
+                    (DBFeed.description.ilike(f"%{query}%"))
+                ).all()
+            
+            if not feeds:
+                return json.dumps({
+                    "success": True,
+                    "feeds": [],
+                    "total_feeds": 0,
+                    "search_info": {
+                        "query": query,
+                        "search_type": search_type,
+                        "message": f"No feeds found matching '{query}'"
+                    }
+                })
+            
+            # Format feed information
+            feeds_info = []
+            for feed in feeds:
+                # Get recent entries count
+                recent_entries_count = (
+                    db.query(FeedEntry)
+                    .filter(FeedEntry.feed_id == feed.id)
+                    .filter(FeedEntry.published_date >= datetime.now() - timedelta(days=7))
+                    .count()
+                )
+                
+                feeds_info.append({
+                    "id": feed.id,
+                    "name": feed.name,
+                    "url": feed.url,
+                    "description": feed.description,
+                    "last_updated": feed.last_updated.isoformat() if feed.last_updated else None,
+                    "recent_entries_count": recent_entries_count,
+                    "match_type": (
+                        "name" if query.lower() in feed.name.lower() else "description"
+                        if feed.description and query.lower() in feed.description.lower()
+                        else "both"
+                    )
+                })
+            
+            # Sort feeds by relevance (exact matches first, then partial matches)
+            feeds_info.sort(key=lambda x: (
+                query.lower() == x["name"].lower(),  # Exact name match
+                query.lower() in x["name"].lower(),  # Partial name match
+                x["description"] and query.lower() in x["description"].lower(),  # Description match
+                x["recent_entries_count"]  # More recent entries
+            ), reverse=True)
+            
+            return json.dumps({
+                "success": True,
+                "feeds": feeds_info,
+                "total_feeds": len(feeds_info),
+                "search_info": {
+                    "query": query,
+                    "search_type": search_type
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in find_feeds: {str(e)}")
+            return json.dumps({
+                "success": False,
+                "error": str(e),
+                "feeds": [],
+                "total_feeds": 0
+            })
+
+# Create the find_feeds tool
+find_feeds_tool = Tool(
+    name="find_feeds",
+    description="""
+    Find RSS feeds by searching their names and descriptions.
+    Useful for discovering feeds related to specific authors, websites, or topics.
+    
+    Features:
+    - Fuzzy matching on feed names and descriptions
+    - Returns feed details including recent entry counts
+    - Sorts results by relevance
+    - Shows when feeds were last updated
+    
+    Args:
+        query: Search term to find in feed names/descriptions
+        search_type: Where to search ("name", "description", "all")
+        
+    Examples:
+    - Find feeds by author: "Ruan Yifeng", "阮一峰"
+    - Find feeds by topic: "programming", "tech news"
+    - Find feeds by website: "github", "medium"
+    
+    Returns:
+        Matching feeds with their details and relevance information
+    """,
+    func=find_feeds
+)
+
+# Update the tools list
 tools = [
     get_feed_details_tool,
     get_category_feeds_tool,
     fetch_feed_tool,
     search_related_feeds_tool,
+    find_feeds_tool,  
     crawl_url_tool,
-    process_content_tool  # Add the new tool
-] 
+    process_content_tool
+]
 
 # MCP tools
 def list_feeds() -> str:
