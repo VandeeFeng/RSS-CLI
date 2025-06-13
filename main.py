@@ -119,8 +119,8 @@ Examples:
     subparsers.add_parser('reset-db', help='Reset the database and recreate all tables')
     
     # Feed management
-    add_feeds = subparsers.add_parser('add-feeds', help='Interactively add new RSS feeds')
-    add_feeds.add_argument('-category', type=str, help='Specify a category when adding feeds')
+    add_feeds_parser = subparsers.add_parser('add-feeds', help='Interactively add new RSS feeds')
+    add_feeds_parser.add_argument('-category', type=str, help='Specify a category when adding feeds')
     
     subparsers.add_parser('fetch-all', help='Fetch latest content for all feeds', parents=[fetch_parent_parser])
     
@@ -130,8 +130,8 @@ Examples:
     fetch_feed = subparsers.add_parser('fetch-feed', help='Fetch latest content for a single feed by name', parents=[fetch_parent_parser])
     fetch_feed.add_argument('name', type=str, help='Feed name')
     
-    import_opml = subparsers.add_parser('import-opml', help='Import feeds from OPML file')
-    import_opml.add_argument('file', type=str, help='OPML file path')
+    import_opml_parser = subparsers.add_parser('import-opml', help='Import feeds from OPML file')
+    import_opml_parser.add_argument('file', type=str, help='OPML file path')
     
     subparsers.add_parser('update-feedjs', help='Update feeds configuration from feeds.json')
     
