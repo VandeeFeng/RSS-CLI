@@ -1,4 +1,4 @@
-from langchain.tools import Tool
+from langchain.tools import Tool, StructuredTool
 from rss.feeds import get_feeds_by_category, get_available_categories, get_feed_by_name, get_all_feeds
 from database.db import SessionLocal
 from database.models import Feed as DBFeed, FeedEntry
@@ -13,6 +13,8 @@ import logging
 import json
 from crawl4ai import AsyncWebCrawler
 import asyncio
+from pydantic.v1 import BaseModel, Field
+from typing import Optional
 
 # Initialize embeddings model
 embeddings_model = OllamaEmbeddings(
@@ -229,6 +231,12 @@ def get_feed_details(feed_name: str) -> str:
                 "feed": None
             }
             return json.dumps(error_response)
+
+class SearchFeedsArgs(BaseModel):
+    query: str = Field(description="Search query describing the topic of interest (e.g., 'AI research', 'tech news')")
+    time_filter: Optional[str] = Field(None, description='Filter feeds by update time ("24h", "week", "month", None for all)')
+    sort_by: Optional[str] = Field("relevance", description='How to sort results ("relevance", "recent", "combined")')
+    limit: Optional[int] = Field(5, description="Maximum number of results to return")
 
 def search_related_feeds(query: str, time_filter: str = None, sort_by: str = "relevance", limit: int = 5) -> str:
     """
@@ -585,7 +593,8 @@ get_feed_details_tool = Tool(
     func=get_feed_details
 )
 
-search_related_feeds_tool = Tool(
+search_related_feeds_tool = StructuredTool.from_function(
+    func=search_related_feeds,
     name="search_related_feeds",
     description="""
     Search for feeds and entries related to a given topic or query using semantic search with advanced filtering.
@@ -605,7 +614,7 @@ search_related_feeds_tool = Tool(
         - Publication dates
         Results can be filtered by time and sorted by different criteria.
     """,
-    func=search_related_feeds
+    args_schema=SearchFeedsArgs,
 )
 
 fetch_feed_tool = Tool(
@@ -764,6 +773,11 @@ crawl_url_tool = Tool(
     func=crawl_url_content
 )
 
+class ProcessContentArgs(BaseModel):
+    content: str = Field(description="The content to process")
+    query: Optional[str] = Field(None, description="Optional query to focus the extraction")
+    max_length: int = Field(1000, description="Maximum length of processed content")
+
 def process_long_content(content: str, query: str = None, max_length: int = 1000) -> str:
     """
     Process long content and extract relevant information.
@@ -832,7 +846,8 @@ def process_long_content(content: str, query: str = None, max_length: int = 1000
             "content": None
         })
 
-process_content_tool = Tool(
+process_content_tool = StructuredTool.from_function(
+    func=process_long_content,
     name="process_long_content",
     description="""
     Process and extract relevant information from long content.
@@ -847,7 +862,7 @@ process_content_tool = Tool(
     Returns:
         Processed and potentially shortened content, focusing on relevant parts.
     """,
-    func=process_long_content
+    args_schema=ProcessContentArgs,
 )
 
 def find_feeds(query: str) -> str:

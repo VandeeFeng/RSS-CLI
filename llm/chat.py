@@ -35,7 +35,12 @@ from langchain_core.prompts import PromptTemplate
 logger = logging.getLogger('rss_ai')
 
 PROMPT = """You are a helpful assistant. You have access to a number of tools.
-Use them when you need to answer a user's question."""
+Use them when you need to answer a user's question.
+Answer in the language user used.
+When the user ask about a specific feed ,You need use the find_feeds tool to find the most relevant feeds for the user's question.
+Then you need to use the get_feed_details tool to get the details of the feeds.
+When the user ask about a specific topic, you need use the search_related_feeds tool to find the most relevant feeds for the user's question.
+"""
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -66,7 +71,7 @@ class RSSChat:
         self.console = Console()
         self.callback_handler = StreamingCallbackHandler(self.console)
         self.waiting_for_user_input = False
-        self.timeout = 60  # 60 seconds timeout
+        self.timeout = 120  
         
         # Configure logging based on debug mode
         log_level = logging.DEBUG if debug else logging.INFO
